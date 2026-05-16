@@ -3,3 +3,5 @@ node_modules/
 nethack-c/emscripten-build/
 nethack-c/upstream/
 *.wasm
+js/debug_*.mjs
+js/test_*.mjs
