@@ -1,14 +1,14 @@
 // fastforward.js — Auto-generated RNG replay for seed8000 starter session.
-// Split into pre-mklev and post-mklev phases.
 // The mklev RNG calls are now consumed by the real mklev.js implementation.
+// The dungeon init calls are now consumed by initDungeons() in dungeon.js.
 //
 // Generated from: seed8000-tourist-starter.session.json
 
 import { rn2, rnd, d, rne, rnz } from "./rng.js";
 
-// Pre-mklev startup: o_init shuffles, dungeon init, u_init_misc
-// 303 leaf RNG calls (session indices 0-308)
-export function fastforward_pre_mklev() {
+// o_init: randomize colors, object shuffles, nhlib.lua random calls
+// 201 leaf RNG calls (session indices 0-200)
+export function fastforward_o_init() {
     // randomize_gem_colors
     rn2(2); rn2(2); rn2(4);
     // shuffle
@@ -39,81 +39,12 @@ export function fastforward_pre_mklev() {
     rn2(3); rn2(2); rn2(1);
     // init_objects
     rn2(2);
-    // random
+    // random (nhlib.lua shuffle during o_init)
     rn2(3); rn2(2);
-    // init_dungeon_dungeons
-    rn2(100); rn2(5);
-    // init_level
-    rn2(100); rn2(100); rn2(100); rn2(100); rn2(100);
-    // place_level
-    rn2(4); rn2(5); rn2(4); rn2(1);
-    // init_dungeon_dungeons
-    rn2(100); rn2(5);
-    // parent_dlevel
-    rn2(1);
-    // init_level
-    rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100);
-    rn2(100); rn2(100); rn2(100);
-    // place_level
-    rn2(1); rn2(1); rn2(4); rn2(3); rn2(5); rn2(6); rn2(1); rn2(1);
-    rn2(4); rn2(4); rn2(3);
-    // init_dungeon_dungeons
-    rn2(100); rn2(2);
-    // parent_dlevel
-    rn2(3);
-    // init_level
-    rn2(100); rn2(100);
-    // place_level
-    rn2(2); rn2(1);
-    // init_dungeon_dungeons
-    rn2(100); rn2(2);
-    // parent_dlevel
-    rn2(2);
-    // init_level
-    rn2(100); rn2(100); rn2(100);
-    // place_level
-    rn2(1); rn2(1); rn2(1);
-    // init_dungeon_dungeons
-    rn2(100);
-    // parent_dlevel
-    rn2(1);
-    // init_level
-    rn2(100); rn2(100); rn2(100); rn2(100);
-    // place_level
-    rn2(1); rn2(1); rn2(1); rn2(1);
-    // init_dungeon_dungeons
-    rn2(100);
-    // parent_dlevel
-    rn2(4);
-    // init_level
-    rn2(100);
-    // place_level
-    rn2(1);
-    // init_dungeon_dungeons
-    rn2(100);
-    // parent_dlevel
-    rn2(5);
-    // init_level
-    rn2(100); rn2(100); rn2(100);
-    // place_level
-    rn2(1); rn2(1); rn2(1);
-    // init_dungeon_dungeons
-    rn2(100);
-    // parent_dlevel
-    rn2(1);
-    // init_level
-    rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100);
-    // place_level
-    rn2(1); rn2(1); rn2(1); rn2(1); rn2(1); rn2(1);
-    // init_dungeon_dungeons
-    rn2(100);
-    // init_level
-    rn2(100); rn2(100);
-    // place_level
-    rn2(1); rn2(1);
-    // init_castle_tune
-    rn2(7); rn2(7); rn2(7); rn2(7); rn2(7);
-    // u_init_misc
+}
+
+// u_init_misc: handedness roll (1 call, session index 299)
+export function fastforward_u_init_misc() {
     rn2(10);
 }
 
