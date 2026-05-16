@@ -1,2 +1,5 @@
 node_modules/
 .cache/
+nethack-c/emscripten-build/
+nethack-c/upstream/
+*.wasm
