@@ -100,9 +100,6 @@ export async function moveloop_core() {
     // Read and execute one command
     await rhack(0);
 
-    // Clear message after command is processed
-    g._pending_message = '';
-
     // Advance turn
     if (g.context?.move) {
         g.moves = (g.moves || 1) + 1;

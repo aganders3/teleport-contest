@@ -35,8 +35,7 @@ function blocksMove(x, y) {
 // C ref: cmd.c rhack — main command dispatcher
 export async function rhack(key) {
     if (key === 0) {
-        // Read key from input
-        await flush_screen(1);
+        // Read key from input (flush already done in moveloop_core)
         key = await nhgetch();
     }
 
@@ -45,10 +44,19 @@ export async function rhack(key) {
     if (isMovementKey(ch)) {
         await domove(DIR_DX[ch], DIR_DY[ch]);
         game.context.move = 1;
-    } else {
-        // Unknown command
+    } else if (ch === 's') {
+        // Search for traps/secret doors: takes a turn, no per-step messages
+        game.context.move = 1;
+    } else if (ch === ':') {
+        // Look at floor: no turn consumed
+        await pline('You see no objects here.');
         game.context.move = 0;
-        await pline(`Unknown command '${ch}'.`);
+    } else if (key === 27) {
+        // ESC: cancel, no turn
+        game.context.move = 0;
+    } else {
+        // Unknown command: no turn
+        game.context.move = 0;
     }
 }
 
