@@ -296,6 +296,19 @@ export async function bot() {
     // Status line updates happen in _buildScreenOutput
 }
 
+// ── writeStatusToDisplay ──
+// Write status lines to rows 22-23. Used by overlay commands that need status preserved.
+export function writeStatusToDisplay() {
+    const display = game?.nhDisplay;
+    if (!display) return;
+    const s1 = _statusLine1().replace(/\x1b\[(\d+)C/g, (_, n) => ' '.repeat(parseInt(n)));
+    for (let c = 0; c < Math.min(s1.length, display.cols); c++)
+        display.setCell(c, 22, s1[c], NO_COLOR, 0);
+    const s2 = _statusLine2();
+    for (let c = 0; c < Math.min(s2.length, display.cols); c++)
+        display.setCell(c, 23, s2[c], NO_COLOR, 0);
+}
+
 // ── pline ──
 export async function pline(msg) {
     game._pending_message = msg;
