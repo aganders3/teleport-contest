@@ -1,0 +1,4 @@
+# NetHack sysconf for emscripten build
+# Minimal configuration
+HACKDIR=/nethack
+WIZARDS=

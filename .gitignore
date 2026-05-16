@@ -1,2 +1,7 @@
 node_modules/
 .cache/
+nethack-c/emscripten-build/
+nethack-c/upstream/
+*.wasm
+js/debug_*.mjs
+js/test_*.mjs
