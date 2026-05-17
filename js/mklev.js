@@ -19,7 +19,7 @@ import {
     SDOOR, SCORR, IRONBARS, FOUNTAIN, SINK, ALTAR, GRAVE,
     DIR_N, DIR_S, DIR_E, DIR_W, DIR_180,
     IS_WALL, IS_STWALL, IS_DOOR, IS_OBSTRUCTED, IS_FURNITURE, IS_POOL,
-    SPACE_POS, isok, W_NONDIGGABLE, FILL_NORMAL,
+    SPACE_POS, isok, W_NONDIGGABLE, FILL_NONE, FILL_NORMAL,
     ICE, MOAT, POOL, WATER, LAVAPOOL, LAVAWALL, DBWALL,
     A_LAWFUL, Align2amask,
     LR_UPTELE,
@@ -71,32 +71,34 @@ const YLIM = 3;
 const xdir = [-1, -1, 0, 1, 1, 1, 0, -1];
 const ydir = [0, -1, -1, -1, 0, 1, 1, 1];
 
-// Trap constants
+// Trap constants (C ref: trap.h enum trap_types)
 const NO_TRAP = 0;
-const TRAPNUM = 26;
 const ARROW_TRAP = 1;
 const DART_TRAP = 2;
 const ROCKTRAP = 3;
-const SLP_GAS_TRAP = 6;
+const SQKY_BOARD = 4;
+const BEAR_TRAP = 5;
+const LANDMINE = 6;
 const ROLLING_BOULDER_TRAP = 7;
-const RUST_TRAP = 4;
-const SQKY_BOARD = 5;
-const FIRE_TRAP = 8;
-const PIT = 9;
-const SPIKED_PIT = 10;
-const HOLE = 11;
+const SLP_GAS_TRAP = 8;
+const RUST_TRAP = 9;
+const FIRE_TRAP = 10;
+const PIT = 11;
+const SPIKED_PIT = 12;
+const HOLE = 13;
 const TRAPDOOR = 14;
 const TELEP_TRAP = 15;
 const LEVEL_TELEP = 16;
-const WEB = 17;
-const STATUE_TRAP = 18;
-const MAGIC_TRAP = 19;
-const LANDMINE = 20;
-const POLY_TRAP = 21;
-const VIBRATING_SQUARE = 22;
-const TRAPPED_DOOR = 23;
-const TRAPPED_CHEST = 24;
-const MAGIC_PORTAL = 25;
+const MAGIC_PORTAL = 17;
+const WEB = 18;
+const STATUE_TRAP = 19;
+const MAGIC_TRAP = 20;
+const ANTI_MAGIC = 21;
+const POLY_TRAP = 22;
+const VIBRATING_SQUARE = 23;
+const TRAPPED_DOOR = 24;
+const TRAPPED_CHEST = 25;
+const TRAPNUM = 26;
 
 function is_hole(t) { return t === HOLE || t === TRAPDOOR; }
 function is_pit(t) { return t === PIT || t === SPIKED_PIT; }
@@ -257,8 +259,19 @@ function mkgold(amount, x, y) {
         const mul = rnd(Math.trunc(30 / Math.max(12 - depthVal, 2)));
         amount = 1 + rnd(level_difficulty() + 2) * mul;
     }
-    // mksobj_at(GOLD_PIECE) calls next_ident
-    next_ident();
+    // Check if gold already exists at (x,y) — if so, no new object (no next_ident)
+    const g = game;
+    if (!g.level) { next_ident(); return; }
+    if (!g.level._gold_cells) g.level._gold_cells = new Map();
+    const key = `${x},${y}`;
+    if (g.level._gold_cells.has(key)) {
+        // Existing gold: just increment quan, no next_ident call
+        g.level._gold_cells.set(key, (g.level._gold_cells.get(key) || 0) + amount);
+    } else {
+        // New gold: mksobj_at(GOLD_PIECE) calls next_ident
+        next_ident();
+        g.level._gold_cells.set(key, amount);
+    }
 }
 
 function place_object(otmp, x, y) { /* stub */ }
@@ -493,7 +506,7 @@ async function makelevel() {
     makecorridors();
     await make_niches();
 
-    // Vault creation (simplified for contest)
+    // Vault creation (C ref: mklev.c:1316-1341)
     if (g.vault_x !== -1) {
         const vw = { v: 1 }, vh = { v: 1 };
         const vx = { v: g.vault_x }, vy = { v: g.vault_y };
@@ -502,20 +515,38 @@ async function makelevel() {
             g.level.flags.has_vault = true;
             const vaultRoom = g.level.rooms[g.level.nroom - 1];
             if (vaultRoom) vaultRoom.needfill = FILL_NORMAL;
-            if (!is_branchlev()) rn2(3);
-            if (!rn2(3)) await makeniche(TELEP_TRAP);
+            fill_special_room(vaultRoom);  // C ref: line 1330
+            mk_knox_portal();  // C ref: line 1331 (no-op at depth 1 branch level)
+            if (!g.level.flags.noteleport && !rn2(3)) {
+                // makevtele stub (no additional RNG)
+            }
         } else if (rnd_rect()) {
             // Fallback vault attempt — simplified
         }
     }
+
+    // do_mkroom for special rooms (depth-based; all fail at depth 1)
 
     // Place dungeon branch
     if (branchp) {
         place_branch(branchp);
     }
 
-    // Fill rooms + mineralize: consumed by fastforward_fill_mineralize
-    // Called externally from allmain.js after mklev structural phase
+}
+
+// C ref: ROOM_IS_FILLABLE macro in mklev.h
+function room_is_fillable(r) {
+    return r && r.hx > 0 && (r.rtype === OROOM || r.rtype === THEMEROOM);
+}
+
+// C ref: mklev.c mk_knox_portal() — for depth 1 branch level, always no-op
+function mk_knox_portal() {
+    // At depth 1 which is always Is_branchlev → return immediately without RNG
+    // For deeper levels, would call rn2(3) for deferral check
+    if (is_branchlev()) return;
+    // Otherwise check if Knox portal should be placed (rn2(3) + depth check)
+    // For simplicity: at non-branch levels below depth 10, still no-op
+    // (mk_knox_portal only places portals above depth 10 in main dungeon)
 }
 
 // C ref: mklev.c makerooms()
@@ -1502,10 +1533,11 @@ function wallification(x1, y1, x2, y2) {
 // ============================================================
 
 function traptype_rnd() {
-    const lvl = game.u?.uz?.dlevel ?? 1;
+    const lvl = depth_of_level(game.u?.uz);
     let kind = rnd(TRAPNUM - 1);
     switch (kind) {
-    case TRAPPED_DOOR: case TRAPPED_CHEST: case MAGIC_PORTAL: case VIBRATING_SQUARE:
+    case TRAPPED_DOOR: case TRAPPED_CHEST:
+    case MAGIC_PORTAL: case VIBRATING_SQUARE:
         kind = NO_TRAP; break;
     case ROLLING_BOULDER_TRAP: case SLP_GAS_TRAP:
         if (lvl < 2) kind = NO_TRAP; break;
@@ -1520,7 +1552,7 @@ function traptype_rnd() {
     case STATUE_TRAP: case POLY_TRAP:
         if (lvl < 8) kind = NO_TRAP; break;
     case FIRE_TRAP:
-        kind = NO_TRAP; break; // not hellish
+        if (!game.flags?.inhell) kind = NO_TRAP; break;
     case TELEP_TRAP:
         if (game.level?.flags?.noteleport) kind = NO_TRAP; break;
     case HOLE:
@@ -1583,22 +1615,29 @@ function mktrap_victim(trap) {
 async function mktrap_room(croom) {
     let kind;
     do { kind = traptype_rnd(); } while (kind === NO_TRAP);
-    const dungeon = game.dungeons?.[game.u?.uz?.dnum ?? 0];
-    const canFallThru = (game.u?.uz?.dlevel ?? 1) < (dungeon?.num_dunlevs ?? 1);
+    const canFallThru = can_fall_thru();
     if (is_hole(kind) && !canFallThru) kind = ROCKTRAP;
     const pos = { x: 0, y: 0 };
     if (!somexyspace(croom, pos)) return;
     const trap = await maketrap(pos.x, pos.y, kind);
     kind = trap ? trap.ttyp : NO_TRAP;
-    const lvl = game.u?.uz?.dlevel ?? 1;
+    const lvl = depth_of_level(game.u?.uz);
     if (game.in_mklev && kind !== NO_TRAP
         && lvl <= rnd(4)
         && kind !== SQKY_BOARD && kind !== RUST_TRAP
-        && !(kind === ROLLING_BOULDER_TRAP && trap.launch?.x === trap.tx && trap.launch?.y === trap.ty)
+        && !(kind === ROLLING_BOULDER_TRAP && trap?.launch?.x === trap?.tx && trap?.launch?.y === trap?.ty)
         && !is_pit(kind) && (kind < HOLE || kind === MAGIC_TRAP)) {
         if (kind === LANDMINE) { trap.ttyp = PIT; trap.tseen = true; }
         mktrap_victim(trap);
     }
+}
+
+function can_fall_thru() {
+    const g = game;
+    const dlevel = g.u?.uz?.dlevel ?? 1;
+    const dnum = g.u?.uz?.dnum ?? 0;
+    const dungeon = g.dungeons?.[dnum];
+    return dlevel < (dungeon?.num_dunlevs ?? 1);
 }
 
 function mkfount(croom) {
@@ -1641,6 +1680,38 @@ function mkgrave_room(croom) {
         curse(otmp);
     }
     if (dobell) mksobj_at(BELL, pos.x, pos.y, true, false);
+}
+
+// C ref: sp_lev.c fill_special_room()
+function fill_special_room(croom) {
+    const g = game;
+    if (!croom) return;
+    // Recurse into subrooms (simplified: no subrooms for contest levels)
+    if (croom.rtype === OROOM || croom.rtype === THEMEROOM
+        || croom.needfill === FILL_NONE) return;
+
+    if (croom.needfill === FILL_NORMAL) {
+        const depth = Math.abs(depth_of_level(g.u?.uz));
+        switch (croom.rtype) {
+        case VAULT:
+            for (let x = croom.lx; x <= croom.hx; x++) {
+                for (let y = croom.ly; y <= croom.hy; y++) {
+                    const amount = rn2(depth * 100) + 51;  // rn1(depth*100, 51)
+                    mkgold(amount, x, y);
+                }
+            }
+            break;
+        // Other special room types (ZOO, COURT, etc.) not yet ported
+        }
+    }
+    switch (croom.rtype) {
+    case VAULT: if (g.level) g.level.flags.has_vault = true; break;
+    case ZOO: if (g.level) g.level.flags.has_zoo = true; break;
+    case COURT: if (g.level) g.level.flags.has_court = true; break;
+    case MORGUE: if (g.level) g.level.flags.has_morgue = true; break;
+    case BEEHIVE: if (g.level) g.level.flags.has_beehive = true; break;
+    case BARRACKS: if (g.level) g.level.flags.has_barracks = true; break;
+    }
 }
 
 async function fill_ordinary_room(croom, bonus_items) {
