@@ -10,15 +10,16 @@ import { mklev, l_nhcore_init, u_on_upstairs } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
-import { fastforward_o_init, fastforward_u_init_misc, fastforward_post_mklev, fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
+import { fastforward_u_init_misc, fastforward_post_mklev, fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
 import { initDungeons } from './dungeon.js';
+import { init_objects } from './o_init.js';
 
 // C ref: allmain.c newgame()
 export async function newgame() {
     const g = game;
 
-    // o_init shuffles (indices 0-200)
-    fastforward_o_init();
+    // o_init: shuffle object descriptions for any seed (indices 0-200)
+    init_objects();
 
     // Dungeon init: build branch/level layout (indices 201-298, variable by seed)
     const wizardMode = !!(g.flags?.debug);
