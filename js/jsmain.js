@@ -16,6 +16,7 @@ import { newgame, moveloop_core } from './allmain.js';
 import { parseNethackrc } from './options.js';
 import { flush_screen } from './display.js';
 import { GameDisplay } from './game_display.js';
+import { roles, races, findRole, findRace } from './roles.js';
 
 // ── NethackGame ──
 // Wraps a single game session with replay infrastructure.
@@ -99,9 +100,17 @@ export class NethackGame {
         g.program_state = {};
         g.moves = 1;
 
-        // TODO: Map role/race/gender/align from opts to role data
-        g.urole = { name: { m: 'Rambler', f: 'Rambler' } };
-        g.urace = { adj: 'human' };
+        // Map role/race/gender/align from options to role data tables
+        const roleData = findRole(opts.role) || roles[10]; // default Tourist
+        const raceData = findRace(opts.race) || races[0];  // default human
+        g.urole_data = roleData;
+        g.urace_data = raceData;
+        g.urole = { name: roleData.name, rank: (roleData.title || [{ m: roleData.name.m, f: roleData.name.f }])[0] };
+        g.urace = { adj: raceData.adj };
+        g.flags.female = (opts.gender === 'female');
+        g.flags.initrole = roles.indexOf(roleData);
+        g.flags.initrace = races.indexOf(raceData);
+        g.flags.initalign = opts.align === 'lawful' ? 0 : opts.align === 'chaotic' ? 2 : 1;
 
         // Initialize PRNG
         initRng(this._seed);
