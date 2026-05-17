@@ -88,8 +88,9 @@ export class NethackGame {
 
         // Parse nethackrc
         const opts = parseNethackrc(this._nethackrc);
-        g.plname = opts.name || 'Hero';
         g.flags = { verbose: true, ...opts.flags };
+        // C ref: options.c set_playmode() — debug/wizard mode forces plname="wizard"
+        g.plname = g.flags.debug ? 'wizard' : (opts.name || 'Hero');
         g.iflags = { ...opts.iflags };
         if (opts.preferred_pet) g.preferred_pet = opts.preferred_pet;
         if (opts.tutorial_set) g.tutorial_set_in_config = true;
@@ -110,7 +111,8 @@ export class NethackGame {
         g.flags.female = (opts.gender === 'female');
         g.flags.initrole = roles.indexOf(roleData);
         g.flags.initrace = races.indexOf(raceData);
-        g.flags.initalign = opts.align === 'lawful' ? 0 : opts.align === 'chaotic' ? 2 : 1;
+        // A_LAWFUL=1, A_NEUTRAL=0, A_CHAOTIC=-1 (C ref: align.h)
+        g.flags.initalign = opts.align === 'lawful' ? 1 : opts.align === 'chaotic' ? -1 : 0;
 
         // Initialize PRNG
         initRng(this._seed);

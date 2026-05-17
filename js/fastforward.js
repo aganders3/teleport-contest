@@ -7,6 +7,7 @@
 
 import { rn2, rnd, d, rne, rnz } from "./rng.js";
 import { init_attr, vary_init_attr } from "./attrib.js";
+import { game } from "./gstate.js";
 
 // o_init: randomize colors, object shuffles, nhlib.lua random calls
 // 201 leaf RNG calls (session indices 0-200)
@@ -45,9 +46,30 @@ export function fastforward_o_init() {
     rn2(3); rn2(2);
 }
 
-// u_init_misc: handedness roll (1 call, session index 299)
+// u_init_misc: newhp, newpw, handedness (C ref: u_init.c u_init_misc)
+// newhp/newpw: role.hpadv/enadv infix+race infix, plus rnd(inrnd) if inrnd>0
+// All roles have hpadv.inrnd=0 and all races have both inrnd=0, so only
+// role.enadv.inrnd can be nonzero (Healer/Knight=4, Monk=2, Priest/Wizard=3).
 export function fastforward_u_init_misc() {
-    rn2(10);
+    const g = game;
+    const role = g.urole_data || { hpadv: { infix: 8, inrnd: 0 }, enadv: { infix: 1, inrnd: 0 } };
+    const race = g.urace_data || { hpadv: { infix: 2, inrnd: 0 }, enadv: { infix: 1, inrnd: 0 } };
+
+    // newhp() at ulevel=0
+    let hp = role.hpadv.infix + race.hpadv.infix;
+    if (role.hpadv.inrnd > 0) hp += rnd(role.hpadv.inrnd);
+    if (race.hpadv.inrnd > 0) hp += rnd(race.hpadv.inrnd);
+
+    // newpw() at ulevel=0
+    let en = role.enadv.infix + race.enadv.infix;
+    if (role.enadv.inrnd > 0) en += rnd(role.enadv.inrnd);
+    if (race.enadv.inrnd > 0) en += rnd(race.enadv.inrnd);
+
+    // Handedness: rn2(10)==0 → left-handed
+    const handRoll = rn2(10);
+    g.u.uleft = handRoll ? 0 : 1;
+    g.u.uhp = g.u.uhpmax = g.u.uhppeak = hp;
+    g.u.uen = g.u.uenmax = g.u.uenpeak = en;
 }
 
 // Post-mklev startup: u_init_role, ini_inv, attributes, moveloop_preamble
