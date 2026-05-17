@@ -54,10 +54,9 @@ export async function newgame() {
     // Contestants: port u_init to compute these from game PRNG.
     g._goldCount = 757;
     g.u.ulevel = 1;
-    g.u.uhp = 10; g.u.uhpmax = 10;
-    g.u.uen = 2; g.u.uenmax = 2;
+    // g.u.uhp/uhpmax and g.u.uen/uenmax set by fastforward_u_init_misc() above
     g.u.uac = 10; g.u.uexp = 0;
-    g.u.ualign = { type: 0, record: 0 };
+    g.u.ualign = { type: g.flags?.initalign ?? 0, record: 0 };
     // acurr and amax are set by init_attr() inside fastforward_post_mklev()
     g.moves = 1;
     // urole/urace may have been set by jsmain.js from nethackrc; keep them,
@@ -66,8 +65,8 @@ export async function newgame() {
     if (!g.urace) g.urace = { adj: 'human' };
     g.plname = g.plname || 'Contestant';
 
-    // Additional hardcoded state for seed8000 Tourist
-    g.u.uleft = 1;   // left-handed (rn2-determined during u_init)
+    // Additional state
+    // g.u.uleft set by fastforward_u_init_misc() above
     g.u.uhs = 1;     // hunger: 1 = NOT_HUNGRY
     g.u.ulite = 0;   // encumbrance: 0 = unencumbered
 
@@ -108,9 +107,17 @@ export async function newgame() {
     await bot();
 
     // Welcome message
-    const alignName = 'neutral';
+    // C ref: role.c Hello() — role-specific greeting word
+    const roleName = g.urole?.name?.m || 'Tourist';
+    const greeting = roleName === 'Knight' ? 'Salutations'
+                   : roleName === 'Tourist' ? 'Aloha'
+                   : roleName === 'Valkyrie' ? 'Velkommen'
+                   : roleName === 'Samurai' ? 'Konnichi wa'
+                   : 'Hello';
+    const align = g.u?.ualign?.type > 0 ? 'lawful' : g.u?.ualign?.type < 0 ? 'chaotic' : 'neutral';
     const genderAdj = g.flags?.female ? 'female' : 'male';
-    await pline(`Aloha ${g.plname}, welcome to NetHack!  You are a ${alignName} ${genderAdj} human ${g.urole.name.m}.`);
+    const raceAdj = g.urace?.adj || 'human';
+    await pline(`${greeting} ${g.plname}, welcome to NetHack!  You are a ${align} ${genderAdj} ${raceAdj} ${roleName}.`);
 }
 
 // C ref: allmain.c moveloop_core()
