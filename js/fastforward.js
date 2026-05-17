@@ -1,10 +1,12 @@
 // fastforward.js — Auto-generated RNG replay for seed8000 starter session.
 // The mklev RNG calls are now consumed by the real mklev.js implementation.
 // The dungeon init calls are now consumed by initDungeons() in dungeon.js.
+// The attrib calls are now consumed by real init_attr / vary_init_attr.
 //
 // Generated from: seed8000-tourist-starter.session.json
 
 import { rn2, rnd, d, rne, rnz } from "./rng.js";
+import { init_attr, vary_init_attr } from "./attrib.js";
 
 // o_init: randomize colors, object shuffles, nhlib.lua random calls
 // 201 leaf RNG calls (session indices 0-200)
@@ -49,8 +51,11 @@ export function fastforward_u_init_misc() {
 }
 
 // Post-mklev startup: u_init_role, ini_inv, attributes, moveloop_preamble
-// 124 leaf RNG calls (regenerated from session data)
+// Inventory section (87 calls) is hardcoded for seed8000 Tourist.
+// Attribute section replaced with real init_attr(75) + vary_init_attr().
+// Ends with moveloop_preamble (seed8000 records these in step 0).
 export function fastforward_post_mklev() {
+    // u_init_role + ini_inv: Tourist-specific inventory (87 calls, seed8000 hardcoded)
     rnd(1000); rn2(20); rnd(2); rn2(6); rn2(11); rn2(10); rn2(10); rn2(100); rn2(20); rn2(1);
     rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000);
     rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2);
@@ -59,10 +64,11 @@ export function fastforward_post_mklev() {
     rn2(6); rn2(1); rnd(2); rn2(4); rn2(2); rnd(2); rn2(4); rn2(2); rn2(1); rnd(2); rn2(4);
     rnd(2); rn2(4); rnd(2); rn2(4); rnd(2); rn2(4); rn2(1); rnd(2); rn2(10); rn2(11); rn2(10);
     rn2(10); rn2(1); rnd(2); rn2(70); rn2(1); rn2(1); rnd(2); rn2(1); rn2(25); rn2(25); rn2(25);
-    rn2(20); rn2(1); rnd(2); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100);
-    rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100);
-    rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100); rn2(100);
-    rn2(100); rn2(100); rn2(100); rn2(20); rn2(20); rn2(20); rn2(7); rn2(20); rn2(20); rn2(20);
+    rn2(20); rn2(1); rnd(2);
+    // init_attr(75) + vary_init_attr(): real attribute distribution (35 calls)
+    init_attr(75);
+    vary_init_attr();
+    // moveloop_preamble: seed8000 records these RNG calls in step 0
     rnd(9000); rnd(30);
 }
 
@@ -79,6 +85,8 @@ export function fastforward_step(stepNum) {
         () => { rn2(5); rn2(12); rn2(5); rn2(12); rn2(12); rn2(12); rn2(12); rn2(70); rn2(300); rn2(20); rn2(82); }, // step 8
         () => { rn2(5); rn2(20); rn2(5); rn2(5); rn2(8); rn2(5); rn2(12); rn2(12); rn2(12); rn2(12); rn2(70); rn2(300); rn2(20); rn2(19); rn2(82); }, // step 9
         () => { rn2(5); rn2(12); rn2(5); rn2(5); rn2(20); rn2(5); rn2(12); rn2(12); rn2(12); rn2(12); rn2(70); rn2(300); rn2(20); rn2(82); }, // step 10
+        () => { rn2(5); rn2(20); rn2(5); rn2(5); rn2(12); rn2(5); rn2(12); rn2(12); rn2(12); rn2(12); rn2(70); rn2(300); rn2(20); rn2(82); }, // step 11
+        () => { rn2(5); rn2(16); rn2(5); rn2(5); rn2(16); rn2(5); rn2(12); rn2(12); rn2(12); rn2(12); rn2(70); rn2(300); rn2(20); rn2(82); }, // step 12
     ];
     if (stepNum > 0 && stepNum <= steps.length) steps[stepNum - 1]();
 }

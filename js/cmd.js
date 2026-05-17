@@ -155,8 +155,8 @@ async function doExtendedCharInfo() {
     const ENC = ['unencumbered', 'burdened', 'stressed', 'strained', 'overtaxed', 'overloaded'];
     const encText = ENC[u.ulite ?? 0] || 'unencumbered';
 
-    // Stats
-    const [str, dex, con, int_, wis, cha] = u.acurr?.a || [0,0,0,0,0,0];
+    // Stats — C internal order: A_STR=0 A_INT=1 A_WIS=2 A_DEX=3 A_CON=4 A_CHA=5
+    const [str, int_, wis, dex, con, cha] = u.acurr?.a || [0,0,0,0,0,0];
 
     // Page 1
     const page1 = [

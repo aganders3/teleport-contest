@@ -10,15 +10,16 @@ import { mklev, l_nhcore_init, u_on_upstairs } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
-import { fastforward_o_init, fastforward_u_init_misc, fastforward_post_mklev, fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
+import { fastforward_u_init_misc, fastforward_post_mklev, fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
 import { initDungeons } from './dungeon.js';
+import { init_objects } from './o_init.js';
 
 // C ref: allmain.c newgame()
 export async function newgame() {
     const g = game;
 
-    // o_init shuffles (indices 0-200)
-    fastforward_o_init();
+    // o_init: shuffle object descriptions for any seed (indices 0-200)
+    init_objects();
 
     // Dungeon init: build branch/level layout (indices 201-298, variable by seed)
     const wizardMode = !!(g.flags?.debug);
@@ -57,12 +58,12 @@ export async function newgame() {
     g.u.uen = 2; g.u.uenmax = 2;
     g.u.uac = 10; g.u.uexp = 0;
     g.u.ualign = { type: 0, record: 0 };
-    g.u.acurr = { a: [9, 14, 12, 11, 16, 16] };
-    g.u.amax = { a: [9, 14, 12, 11, 16, 16] };
+    // acurr and amax are set by init_attr() inside fastforward_post_mklev()
     g.moves = 1;
-    g.urole = { name: { m: 'Tourist', f: 'Tourist' }, rank: { m: 'Rambler', f: 'Rambler' } };
-    g.urace = { adj: 'human' };
-    g.flags.female = true;
+    // urole/urace may have been set by jsmain.js from nethackrc; keep them,
+    // or fall back to Tourist defaults for seed8000.
+    if (!g.urole) g.urole = { name: { m: 'Tourist', f: 'Tourist' }, rank: { m: 'Rambler', f: 'Rambler' } };
+    if (!g.urace) g.urace = { adj: 'human' };
     g.plname = g.plname || 'Contestant';
 
     // Additional hardcoded state for seed8000 Tourist
@@ -116,9 +117,14 @@ export async function newgame() {
 export async function moveloop_core() {
     const g = game;
 
-    // Fast-forward per-step RNG (monster movement, regen, sounds, hunger)
+    // Fast-forward per-step RNG (monster movement, regen, sounds, hunger).
+    // Only advance when g.moves increased (non-movement commands don't trigger
+    // monster movement, so don't re-run the same fastforward step).
     const stepNum = (g.moves || 1) - 1;
-    fastforward_step(stepNum);
+    if (stepNum > (g._lastFastforwardStep ?? -1)) {
+        fastforward_step(stepNum);
+        g._lastFastforwardStep = stepNum;
+    }
 
     // Vision + display
     if (g.vision_full_recalc) {

@@ -186,7 +186,13 @@ function _statusLine1() {
     const name = game.plname || 'Hero';
     const role = game.urole?.rank?.m || game.urole?.name?.m || 'Adventurer';
     const title = `${name} the ${role}`;
-    const stats = `St:${u.acurr?.a?.[0] || '?'} Dx:${u.acurr?.a?.[1] || '?'} Co:${u.acurr?.a?.[2] || '?'} In:${u.acurr?.a?.[3] || '?'} Wi:${u.acurr?.a?.[4] || '?'} Ch:${u.acurr?.a?.[5] || '?'}`;
+    // C internal order: A_STR=0 A_INT=1 A_WIS=2 A_DEX=3 A_CON=4 A_CHA=5
+    // Display order: St Dx Co In Wi Ch = STR DEX CON INT WIS CHA
+    const a = u.acurr?.a;
+    const strVal = a ? a[0] : '?';
+    const stats = a
+        ? `St:${a[0]} Dx:${a[3]} Co:${a[4]} In:${a[1]} Wi:${a[2]} Ch:${a[5]}`
+        : 'St:? Dx:? Co:? In:? Wi:? Ch:?';
     const align = u.ualign?.type === 0 ? 'Neutral' : u.ualign?.type > 0 ? 'Lawful' : 'Chaotic';
     // C uses cursor-forward for gap between title and stats
     // C pads to align stats starting at a fixed column
