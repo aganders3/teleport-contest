@@ -5,6 +5,9 @@
 // room placement, corridors, doors, stairs, niches, and fill.
 // Uses the real game PRNG (not a separate layout PRNG) for bit-exact parity.
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join as pathJoin } from 'path';
 import { game } from './gstate.js';
 import { GameMap } from './game.js';
 import { rn2, rnd, rn1, d, rnz } from './rng.js';
@@ -752,20 +755,145 @@ function make_grave(x, y, text) {
     if (loc) loc.typ = GRAVE;
 }
 
-// random_engraving stub — consumes rn2 for text selection
-function random_engraving() {
-    // C: reads from engrave data file, consumes rn2 for selection
-    const idx = rn2(48); // approximate: rn2(num_engravings)
-    return { text: 'placeholder', pristine: 'placeholder' };
+// ─── Engraving / rumor file support ─────────────────────────────────────────
+// C ref: engrave.c random_engraving(), rumors.c getrumor() + get_rnd_line(),
+//        hacklib.c xcrypt(), engrave.c wipeout_text()
+
+const _mklev_dir = dirname(fileURLToPath(import.meta.url));
+let _rumorsData = null, _engraveData = null;
+let _trueRumorStart, _trueRumorEnd, _falseRumorStart, _falseRumorEnd;
+let _engraveFileStart, _engraveFileEnd;
+
+function _ensureRumorFiles() {
+    if (_rumorsData) return;
+    _rumorsData = readFileSync(pathJoin(_mklev_dir, 'dat/rumors'));
+    _engraveData = readFileSync(pathJoin(_mklev_dir, 'dat/engrave'));
+
+    // Parse rumors header: "%d,%ld,%lx;%d,%ld,%lx;0,0,%lx\n"
+    let nl = _rumorsData.indexOf(0x0a);
+    nl = _rumorsData.indexOf(0x0a, nl + 1); // skip second line containing header data... wait
+    // Actually: line1 = "# don't edit\n", line2 = "count,size,hex_start;...\n"
+    const line1end = _rumorsData.indexOf(0x0a);
+    const line2end = _rumorsData.indexOf(0x0a, line1end + 1);
+    const hdr = _rumorsData.slice(line1end + 1, line2end).toString('ascii');
+    const m = hdr.match(/\d+,(\d+),([0-9a-f]+);\d+,(\d+),([0-9a-f]+);0,0,([0-9a-f]+)/);
+    _trueRumorStart  = parseInt(m[2], 16);
+    _trueRumorEnd    = _trueRumorStart + parseInt(m[1]);
+    _falseRumorStart = parseInt(m[4], 16);
+    _falseRumorEnd   = _falseRumorStart + parseInt(m[3]);
+
+    // Engrave file: skip first "don't edit" line
+    const e1end = _engraveData.indexOf(0x0a);
+    _engraveFileStart = e1end + 1;
+    _engraveFileEnd   = _engraveData.length;
 }
 
-// wipeout_text stub — consumes rn2 for character corruption
-function wipeout_text(text) {
-    for (let i = 0; i < text.length; i++) {
-        if (text[i] !== ' ') {
-            rn2(1 + 27 / (text.length - i));
+function _xcrypt(str) {
+    let bitmask = 1, out = '';
+    for (let i = 0; i < str.length; i++) {
+        let c = str.charCodeAt(i);
+        if (c & (32 | 64)) c ^= bitmask;
+        if ((bitmask <<= 1) >= 32) bitmask = 1;
+        out += String.fromCharCode(c);
+    }
+    return out;
+}
+
+// C ref: rumors.c get_rnd_line() — file-seek simulation using a Buffer
+function _get_rnd_line(buf, startpos, endpos, padlength) {
+    const filechunksize = endpos - startpos;
+    if (filechunksize < 1) return '';
+    let curPos = startpos;
+    for (let trylimit = 10; trylimit > 0; trylimit--) {
+        const chunkoffset = rn2(filechunksize);
+        const seekpos = startpos + chunkoffset;
+        let pos = seekpos;
+        while (pos < endpos && buf[pos] !== 0x0a) pos++;
+        let partialLen = pos - seekpos;
+        if (pos < endpos) { pos++; partialLen++; }
+        curPos = pos;
+        if (!padlength || partialLen <= padlength + 1) break;
+    }
+    if (curPos >= endpos) curPos = startpos;
+    let lineEnd = curPos;
+    while (lineEnd < endpos && buf[lineEnd] !== 0x0a) lineEnd++;
+    const decrypted = _xcrypt(buf.slice(curPos, lineEnd).toString('latin1'));
+    return padlength ? decrypted.replace(/_+$/, '') : decrypted;
+}
+
+// C ref: rumors.c getrumor(truth=0)
+function _getrumor() {
+    _ensureRumorFiles();
+    const adjtruth = rn2(2); // truth=0, so adjtruth = 0+rn2(2)
+    if (adjtruth >= 1)
+        return _get_rnd_line(_rumorsData, _trueRumorStart,  _trueRumorEnd,  60);
+    else
+        return _get_rnd_line(_rumorsData, _falseRumorStart, _falseRumorEnd, 60);
+}
+
+// C ref: rumors.c get_rnd_text(ENGRAVEFILE)
+function _get_rnd_text_engrave() {
+    _ensureRumorFiles();
+    return _get_rnd_line(_engraveData, _engraveFileStart, _engraveFileEnd, 60);
+}
+
+// rubouts table from engrave.c
+const _ruboutsMap = new Map([
+    ['A','^'],['B','Pb['],['C','('],['D','|)['],['E','|FL[_'],
+    ['F','|-'],['G','C('],['H','|-'],['I','|'],['K','|<'],
+    ['L','|_'],['M','|'],['N','|\\'],['O','C('],['P','F'],
+    ['Q','C('],['R','PF'],['T','|'],['U','J'],['V','/\\'],
+    ['W','V/\\'],['Z','/'],['b','|'],['d','c|'],['e','c'],
+    ['g','c'],['h','n'],['j','i'],['k','|'],['l','|'],
+    ['m','nr'],['n','r'],['o','c'],['q','c'],['w','v'],
+    ['y','v'],[':','.'],[';',',:'],[',' ,'.'],['=','-'],
+    ['+','-|'],['*','+'],['@','0'],['0','C('],['1','|'],
+    ['6','o'],['7','/'],['8','3o']
+]);
+const _WIPE_SMALL = new Set(['?', '.', ',', "'", '`', '-', '|', '_']);
+
+// C ref: engrave.c wipeout_text(engr, cnt, seed=0)
+function _wipeout_text(text, cnt) {
+    const arr = text.split('');
+    const lth = arr.length;
+    if (!lth || cnt <= 0) return text;
+    while (cnt-- > 0) {
+        const nxt = rn2(lth);
+        const use_rubout = rn2(4);
+        const s = arr[nxt];
+        if (s === ' ') continue;
+        if (_WIPE_SMALL.has(s)) { arr[nxt] = ' '; continue; }
+        if (!use_rubout) {
+            arr[nxt] = '?';
+        } else {
+            const wipeto = _ruboutsMap.get(s);
+            if (wipeto) {
+                arr[nxt] = wipeto[rn2(wipeto.length)];
+            } else {
+                arr[nxt] = '?';
+            }
         }
     }
+    while (arr.length && arr[arr.length - 1] === ' ') arr.pop();
+    return arr.join('');
+}
+
+// C ref: engrave.c random_engraving()
+function random_engraving() {
+    let pristine = '';
+    if (rn2(4) !== 0) {
+        pristine = _getrumor();
+    }
+    if (!pristine) {
+        pristine = _get_rnd_text_engrave();
+    }
+    const cnt = Math.floor(pristine.length / 4);
+    const text = _wipeout_text(pristine, cnt);
+    return { text, pristine };
+}
+
+// wipeout_text is no longer a separate stub; kept as a no-op shim if needed elsewhere
+function wipeout_text(text) {
     return text;
 }
 
