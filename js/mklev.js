@@ -2192,8 +2192,12 @@ async function fill_ordinary_room(croom, bonus_items) {
     let skip_chests = false;
     if (bonus_items && somexyspace(croom, pos)) {
         const branchp = is_branchlev();
+        const MINES_DNUM = 2;
         const oracle_dlevel = g.oracle_level?.dlevel ?? 5;
-        if (branchp) {
+        // C: uz_branch && dnum!=mines && branch connects to mines
+        const mines_branch = branchp && g.u?.uz?.dnum !== MINES_DNUM
+            && (branchp.end1?.dnum === MINES_DNUM || branchp.end2?.dnum === MINES_DNUM);
+        if (mines_branch) {
             // Mines entrance bonus food
             mksobj_at((rn2(5) < 3) ? FOOD_RATION : rn2(2) ? CRAM_RATION : LEMBAS_WAFER,
                 pos.x, pos.y, true, false);
