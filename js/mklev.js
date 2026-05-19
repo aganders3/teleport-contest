@@ -417,8 +417,10 @@ function mksobj_init(otmp, artif) {
         } else {
             blessorcurse(otmp, 10);
         }
-        rn2(100); // poison check
-        if (artif) rn2(20); // artifact check
+        // is_poisonable == is_multigen for randomly-generated weapons
+        // (both check oc_skill in [-P_SHURIKEN, -P_BOW] range)
+        if (otmp._multigen) rn2(100); // poison check (only for poisonable weapons)
+        if (artif && !rn2(20)) { } // artifact check (nartifact_exist()=0 at start)
         mkobj_erosions(otmp);
         break;
     }
@@ -571,6 +573,31 @@ const MKOBJPROBS = [
     [1, AMULET_CLASS],
 ];
 
+// oclass_prob_totals[class] = sum of oc_prob for all objects in that class
+// Computed from objects.h: WEAPON_CLASS=1002, RING_CLASS=28, all others=1000
+// WEAPON=1002 because arrows+melee+bows: 177+692+133=1002
+// RING=28 because 28 rings each with implicit prob=1
+const OCLASS_PROB_TOTALS = new Map([
+    [WEAPON_CLASS, 1002],
+    [ARMOR_CLASS,  1000],
+    [FOOD_CLASS,   1000],
+    [TOOL_CLASS,   1000],
+    [GEM_CLASS,    1000],
+    [POTION_CLASS, 1000],
+    [SCROLL_CLASS, 1000],
+    [SPBOOK_CLASS, 1000],
+    [WAND_CLASS,   1000],
+    [RING_CLASS,      28],
+    [AMULET_CLASS, 1000],
+    [COIN_CLASS,   1000],
+]);
+
+// Cumulative WEAPON_CLASS probability threshold for multigen weapons
+// (arrows, elven/orcish/silver arrow, ya, crossbow bolt: 177 total)
+// + dart(60) + shuriken(35) + boomerang(15) = 287
+// All weapons with typProb ≤ 287 are multigen (projectiles/missiles)
+const WEAPON_MULTIGEN_THRESHOLD = 287;
+
 // C ref: mkobj.c mkobj() — select class then type, create with mksobj
 function mkobj(oclass, artif) {
     if (oclass === RANDOM_CLASS) {
@@ -582,8 +609,8 @@ function mkobj(oclass, artif) {
         }
     }
     // Select type within class using rnd(oclass_prob_totals[oclass])
-    // RING_CLASS has 28 items each prob=1; all other classes sum to 1000
-    const typProb = (oclass === RING_CLASS) ? rnd(28) : rnd(1000);
+    const total = OCLASS_PROB_TOTALS.get(oclass) || 1000;
+    const typProb = rnd(total);
     return mksobj_from_class(oclass, typProb, false, artif);
 }
 
@@ -600,10 +627,9 @@ function mksobj_from_class(oclass, typProb, init_forced, artif) {
     } else if (oclass === GEM_CLASS) {
         otmp._gem_type = 'GENERIC'; // simplified: treat all gems as generic
     } else if (oclass === WEAPON_CLASS) {
-        // Multigen (projectile) weapons: roughly first 30% of WEAPON probability
-        // (arrows+bolts+darts+shurikens combined ~ 237/weapon_total)
-        // Simplified: use probability range for common projectiles
-        otmp._multigen = false; // simplified default
+        // Multigen weapons (projectiles): typProb ≤ 287 covers all mg=1 weapons
+        // (arrows 1-177, dart 178-237, shuriken 238-272, boomerang 273-287)
+        otmp._multigen = typProb <= WEAPON_MULTIGEN_THRESHOLD;
     }
     next_ident();
     mksobj_init(otmp, artif);
