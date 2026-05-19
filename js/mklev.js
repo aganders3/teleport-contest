@@ -5,9 +5,7 @@
 // room placement, corridors, doors, stairs, niches, and fill.
 // Uses the real game PRNG (not a separate layout PRNG) for bit-exact parity.
 
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join as pathJoin } from 'path';
+import { RUMORS_B64, ENGRAVE_B64 } from './dat_inline.js';
 import { game } from './gstate.js';
 import { GameMap } from './game.js';
 import { rn2, rnd, rn1, d, rnz } from './rng.js';
@@ -829,15 +827,21 @@ function make_grave(x, y, text) {
 // C ref: engrave.c random_engraving(), rumors.c getrumor() + get_rnd_line(),
 //        hacklib.c xcrypt(), engrave.c wipeout_text()
 
-const _mklev_dir = dirname(fileURLToPath(import.meta.url));
 let _rumorsData = null, _engraveData = null;
 let _trueRumorStart, _trueRumorEnd, _falseRumorStart, _falseRumorEnd;
 let _engraveFileStart, _engraveFileEnd;
 
+function _b64ToUint8Array(b64) {
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+}
+
 function _ensureRumorFiles() {
     if (_rumorsData) return;
-    _rumorsData = readFileSync(pathJoin(_mklev_dir, 'dat/rumors'));
-    _engraveData = readFileSync(pathJoin(_mklev_dir, 'dat/engrave'));
+    _rumorsData = _b64ToUint8Array(RUMORS_B64);
+    _engraveData = _b64ToUint8Array(ENGRAVE_B64);
 
     // Parse rumors header: "%d,%ld,%lx;%d,%ld,%lx;0,0,%lx\n"
     let nl = _rumorsData.indexOf(0x0a);
@@ -845,7 +849,7 @@ function _ensureRumorFiles() {
     // Actually: line1 = "# don't edit\n", line2 = "count,size,hex_start;...\n"
     const line1end = _rumorsData.indexOf(0x0a);
     const line2end = _rumorsData.indexOf(0x0a, line1end + 1);
-    const hdr = _rumorsData.slice(line1end + 1, line2end).toString('ascii');
+    const hdr = String.fromCharCode(..._rumorsData.slice(line1end + 1, line2end));
     const m = hdr.match(/\d+,(\d+),([0-9a-f]+);\d+,(\d+),([0-9a-f]+);0,0,([0-9a-f]+)/);
     _trueRumorStart  = parseInt(m[2], 16);
     _trueRumorEnd    = _trueRumorStart + parseInt(m[1]);
@@ -887,7 +891,7 @@ function _get_rnd_line(buf, startpos, endpos, padlength) {
     if (curPos >= endpos) curPos = startpos;
     let lineEnd = curPos;
     while (lineEnd < endpos && buf[lineEnd] !== 0x0a) lineEnd++;
-    const decrypted = _xcrypt(buf.slice(curPos, lineEnd).toString('latin1'));
+    const decrypted = _xcrypt(String.fromCharCode(...buf.slice(curPos, lineEnd)));
     return padlength ? decrypted.replace(/_+$/, '') : decrypted;
 }
 
