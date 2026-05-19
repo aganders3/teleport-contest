@@ -97,65 +97,63 @@ const CROSSBOW            = 88;
 const ELVEN_LEATHER_HELM  = 89;
 const ORCISH_HELM         = 90;
 const DWARVISH_IRON_HELM  = 91;
-const DWARVISH_MITHRIL_COAT = 126;
-const ELVEN_MITHRIL_COAT  = 127;
-const CHAIN_MAIL          = 128;
-const LEATHER_ARMOR       = 134;
-const LEATHER_JACKET      = 135;
-const ELVEN_CLOAK         = 139;
-const ORCISH_CLOAK        = 140;
-const DWARVISH_CLOAK      = 141;
-const LEATHER_CLOAK       = 145;
-const URUK_HAI_SHIELD     = 154;
-const ELVEN_SHIELD        = 153;
-const LARGE_SHIELD        = 156;
-const DWARVISH_ROUNDSHIELD = 157;
-const SHIELD_OF_REFLECTION = 158;
-const LEATHER_GLOVES      = 159;
-const LOW_BOOTS           = 163;
-const HIGH_BOOTS          = 165;
-const IRON_SHOES          = 164;
-const ELVEN_BOOTS         = 169;
-const ORCISH_CHAIN_MAIL   = 129;
-const ORCISH_SHIELD       = 155;
+const DWARVISH_MITHRIL_COAT = 106;
+const ELVEN_MITHRIL_COAT  = 107;
+const CHAIN_MAIL          = 108;
+const ORCISH_CHAIN_MAIL   = 109;
+const LEATHER_ARMOR       = 114;
+const LEATHER_JACKET      = 115;
+const ELVEN_CLOAK         = 119;
+const ORCISH_CLOAK        = 120;
+const DWARVISH_CLOAK      = 121;
+const LEATHER_CLOAK       = 125;
+const ELVEN_SHIELD        = 133;
+const URUK_HAI_SHIELD     = 134;
+const ORCISH_SHIELD       = 135;
+const LARGE_SHIELD        = 136;
+const DWARVISH_ROUNDSHIELD = 137;
+const SHIELD_OF_REFLECTION = 138;
+const LEATHER_GLOVES      = 139;
+const LOW_BOOTS           = 143;
+const IRON_SHOES          = 144;
+const HIGH_BOOTS          = 145;
+const ELVEN_BOOTS         = 149;
 const MACE                = 73;
 const MORNING_STAR        = 75;
 const SILVER_MACE         = 74;
-const PICK_AXE            = 259;
-const WAN_DEATH           = 432;
-const WAN_STRIKING        = 416;
-const CRYSTAL_BALL        = 231;
-const CREAM_PIE           = 287;
-const FLINT               = 472;
-const BOULDER             = 474;
-const ROCK                = 473;
-const GOLD_PIECE          = 437;
-const CORPSE              = 265;
-const STATUE              = 475;
-const KELP_FROND          = 172;
-const SCR_TELEPORTATION   = 333;
-const BELL                = 358;
-
-// Supply chest items
-const POT_HEALING         = 307;
-const POT_EXTRA_HEALING   = 308;
-const POT_SPEED           = 302;
-const POT_GAIN_ENERGY     = 313;
-const SCR_ENCHANT_WEAPON  = 328;
-const SCR_ENCHANT_ARMOR   = 323;
-const SCR_CONFUSE_MONSTER = 325;
-const SCR_SCARE_MONSTER   = 326;
-const WAN_DIGGING         = 427;
-const SPE_HEALING         = 373;
-const LARGE_BOX           = 214;
-const CHEST               = 215;
-const ICE_BOX             = 216;
-const SACK                = 217;
-const OILSKIN_SACK        = 218;
-const BAG_OF_HOLDING      = 219;
-const FOOD_RATION         = 143;
-const CRAM_RATION         = 145;
-const LEMBAS_WAFER        = 146;
+const LARGE_BOX           = 192;
+const CHEST               = 193;
+const ICE_BOX             = 194;
+const SACK                = 195;
+const OILSKIN_SACK        = 196;
+const BAG_OF_HOLDING      = 197;
+const CRYSTAL_BALL        = 209;
+const BELL                = 230;
+const PICK_AXE            = 234;
+const CORPSE              = 238;
+const KELP_FROND          = 247;
+const CREAM_PIE           = 259;
+const LEMBAS_WAFER        = 263;
+const CRAM_RATION         = 264;
+const FOOD_RATION         = 265;
+const POT_SPEED           = 274;
+const POT_HEALING         = 279;
+const POT_EXTRA_HEALING   = 280;
+const POT_GAIN_ENERGY     = 285;
+const SCR_ENCHANT_ARMOR   = 295;
+const SCR_CONFUSE_MONSTER = 297;
+const SCR_SCARE_MONSTER   = 298;
+const SCR_ENCHANT_WEAPON  = 300;
+const SCR_TELEPORTATION   = 305;
+const SPE_HEALING         = 346;
+const WAN_STRIKING        = 389;
+const WAN_DIGGING         = 400;
+const WAN_DEATH           = 405;
+const GOLD_PIECE          = 410;
+const FLINT               = 445;
+const ROCK                = 446;
+const BOULDER             = 447;
+const STATUE              = 448;
 const DUST                = 3;
 const MARK                = 6;
 
@@ -644,35 +642,26 @@ function mksobj(otyp, init, artif) {
 }
 
 // Object type → class mapping using actual otyp ranges from objects.h
-// Weapons: 1-88 (first crossbow), Armor: 89-230, Tools: 231-268(ish),
-// Foods: various, Potions, Scrolls, Spellbooks, Wands, Rings, Amulets, Gems, Rock, Venom
+// WEAPON:18-88, ARMOR:89-152, RING:153-180, AMULET:181-191, TOOL:192-236,
+// FOOD:237-268, POTION:269-294, SCROLL:295-337, SPBOOK:338-381, WAND:382-409,
+// COIN:410, GEM:411-446, ROCK:447-448, BALL:449, CHAIN:450
 function otyp_to_class(otyp) {
-    if (otyp === GOLD_PIECE)     return COIN_CLASS;
-    if (otyp === BOULDER)        return ROCK_CLASS;
-    if (otyp === ROCK)           return GEM_CLASS;   // small thrown rock
-    if (otyp === STATUE)         return ROCK_CLASS;
-    if (otyp === CORPSE || otyp === KELP_FROND || otyp === FOOD_RATION ||
-        otyp === CRAM_RATION || otyp === LEMBAS_WAFER) return FOOD_CLASS;
-    if (otyp === CRYSTAL_BALL)   return TOOL_CLASS;
-    if (otyp === BELL)           return TOOL_CLASS;
-    if (otyp === LARGE_BOX || otyp === CHEST || otyp === ICE_BOX ||
-        otyp === SACK || otyp === OILSKIN_SACK || otyp === BAG_OF_HOLDING) return TOOL_CLASS;
-    if (otyp === WAN_DIGGING || otyp === WAN_DEATH || otyp === WAN_STRIKING) return WAND_CLASS;
-    if (otyp === SPE_HEALING)    return SPBOOK_CLASS;
-    if (otyp === CREAM_PIE)      return FOOD_CLASS;
-    // Range-based classification matching objects.h ordering
-    if (otyp >= 1 && otyp <= 88)   return WEAPON_CLASS;   // weapons through crossbow
-    if (otyp >= 89 && otyp <= 230) return ARMOR_CLASS;    // armor items
-    if (otyp >= 231 && otyp <= 268) return TOOL_CLASS;    // tools
-    if (otyp >= 269 && otyp <= 299) return FOOD_CLASS;    // food
-    if (otyp >= 300 && otyp <= 343) return POTION_CLASS;  // potions
-    if (otyp >= 344 && otyp <= 380) return SCROLL_CLASS;  // scrolls
-    if (otyp >= 381 && otyp <= 420) return SPBOOK_CLASS;  // spellbooks
-    if (otyp >= 421 && otyp <= 436) return WAND_CLASS;    // wands
-    if (otyp >= 438 && otyp <= 466) return RING_CLASS;    // rings
-    if (otyp >= 467 && otyp <= 473) return AMULET_CLASS;  // amulets
-    if (otyp >= 474 && otyp <= 476) return ROCK_CLASS;    // boulders/rocks
-    if (otyp >= 477 && otyp <= 507) return GEM_CLASS;     // gems
+    // Range-based classification from objects.h enumeration
+    if (otyp >= 18 && otyp <= 88)  return WEAPON_CLASS;   // ARROW..CROSSBOW
+    if (otyp >= 89 && otyp <= 152) return ARMOR_CLASS;    // ELVEN_LEATHER_HELM..LEVITATION_BOOTS
+    if (otyp >= 153 && otyp <= 180) return RING_CLASS;    // RIN_ADORNMENT..RIN_PROTECTION_FROM_SHAPE_CHAN
+    if (otyp >= 181 && otyp <= 191) return AMULET_CLASS;  // AMULET_OF_ESP..AMULET_OF_FLYING
+    if (otyp >= 192 && otyp <= 236) return TOOL_CLASS;    // LARGE_BOX..UNICORN_HORN
+    if (otyp >= 237 && otyp <= 268) return FOOD_CLASS;    // TRIPE_RATION..TIN
+    if (otyp >= 269 && otyp <= 294) return POTION_CLASS;  // POT_GAIN_ABILITY..POT_WATER
+    if (otyp >= 295 && otyp <= 337) return SCROLL_CLASS;  // SCR_ENCHANT_ARMOR..SCR_BLANK_PAPER
+    if (otyp >= 338 && otyp <= 381) return SPBOOK_CLASS;  // SPE_DIG..SPE_BLANK_PAPER
+    if (otyp >= 382 && otyp <= 409) return WAND_CLASS;    // WAN_LIGHT..WAN3
+    if (otyp === 410)               return COIN_CLASS;    // GOLD_PIECE
+    if (otyp >= 411 && otyp <= 446) return GEM_CLASS;     // DILITHIUM_CRYSTAL..ROCK (small)
+    if (otyp >= 447 && otyp <= 448) return ROCK_CLASS;    // BOULDER, STATUE
+    if (otyp === 449)               return BALL_CLASS;
+    if (otyp === 450)               return CHAIN_CLASS;
     return FOOD_CLASS;
 }
 
