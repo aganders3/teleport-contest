@@ -10,7 +10,7 @@ import { mklev, l_nhcore_init, u_on_upstairs } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
-import { fastforward_u_init_misc, fastforward_post_mklev, fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
+import { fastforward_u_init_misc, fastforward_post_mklev, fastforward_step } from './fastforward.js';
 import { initDungeons } from './dungeon.js';
 import { init_objects } from './o_init.js';
 
@@ -42,9 +42,7 @@ export async function newgame() {
     // Structural phase consumes RNG for rooms/corridors/doors/stairs
     await mklev();
 
-    // Fill rooms + mineralize: replayed by fastforward
-    // These create objects/monsters that don't affect terrain display
-    fastforward_fill_mineralize();
+    // Fill rooms + mineralize now handled by mklev() → makelevel() + level_finalize_topology()
 
     // Fast-forward through post-mklev startup RNG calls.
     // Covers: u_init_role, ini_inv, attributes, moveloop_preamble.
