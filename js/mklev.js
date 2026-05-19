@@ -71,6 +71,10 @@ const WAN_DIGGING = 305;
 const SPE_HEALING = 327;
 const LARGE_BOX = 214;
 const CHEST = 215;
+const ICE_BOX = 216;
+const SACK = 217;
+const OILSKIN_SACK = 218;
+const BAG_OF_HOLDING = 219;
 const FOOD_RATION = 143;
 const CRAM_RATION = 145;
 const LEMBAS_WAFER = 146;
@@ -251,10 +255,64 @@ function mkobj_erosions(otmp) {
     if (!rn2(100)) {
         if (otmp) otmp.oerodeproof = 1;
     } else {
-        rn2(80); // erosion type 1 (fire/rust/crack)
-        rn2(80); // erosion type 2 (rot/corrode)
+        // erosion type 1: flammable/rustprone/crackable (line 205)
+        if (!rn2(80)) {
+            // most weapons/armor qualify; do-while until rn2(9)!=0 or cap of 3
+            let e = 0; do { e++; } while (e < 3 && !rn2(9));
+        }
+        // erosion type 2: rottable/corrodeable (line 211)
+        if (!rn2(80)) {
+            let e = 0; do { e++; } while (e < 3 && !rn2(9));
+        }
     }
-    rn2(1000); // greased check
+    rn2(1000); // greased check (line 219, outside if/else)
+}
+
+// C ref: mkobj.c boxiprobs — box contents probability table
+const BOXIPROBS = [
+    [18, GEM_CLASS],
+    [15, FOOD_CLASS],
+    [18, POTION_CLASS],
+    [18, SCROLL_CLASS],
+    [12, SPBOOK_CLASS],
+    [7,  COIN_CLASS],
+    [6,  WAND_CLASS],
+    [5,  RING_CLASS],
+    [1,  AMULET_CLASS],
+];
+
+// C ref: mkobj.c mkbox_cnts — fill a container with random items
+function mkbox_cnts(box) {
+    let n;
+    if (box.otyp === ICE_BOX) {
+        n = 20;
+    } else if (box.otyp === CHEST) {
+        n = box.olocked ? 7 : 5;
+    } else if (box.otyp === LARGE_BOX) {
+        n = box.olocked ? 5 : 3;
+    } else if (box.otyp === SACK || box.otyp === OILSKIN_SACK ||
+               box.otyp === BAG_OF_HOLDING) {
+        n = 1;
+    } else {
+        n = 0;
+    }
+    for (n = rn2(n + 1); n > 0; n--) {
+        if (box.otyp === ICE_BOX) {
+            mksobj(CORPSE, true, false);
+        } else {
+            let tprob = rnd(100);
+            let oclass = FOOD_CLASS;
+            for (const [iprob, iclass] of BOXIPROBS) {
+                tprob -= iprob;
+                if (tprob <= 0) { oclass = iclass; break; }
+            }
+            mkobj(oclass, false);
+            if (oclass === COIN_CLASS) {
+                rnd(level_difficulty() + 2);
+                rnd(75);
+            }
+        }
+    }
 }
 
 // C ref: mkobj.c mksobj_init — per-class initialization RNG
@@ -362,10 +420,14 @@ function mksobj_init(otmp, artif) {
         break;
     }
     case RING_CLASS: {
-        // Simplified ring init
-        // Most rings: blessorcurse(3) or nothing + possibly rn2(10)+rn2(10)+rne(3)+rn2(4)+rn2(3)+rn2(5)
-        // For now: blessorcurse(3) for "charged" rings, nothing otherwise
-        blessorcurse(otmp, 3);
+        // C ref: mksobj_init:1128 — charged vs uncharged rings
+        // Uncharged rings (most): else-if path — rn2(10), if non-zero also rn2(9)
+        // Charged rings (~5/28): blessorcurse(3) + complex spe init
+        // Simplified: assume uncharged (most common for random selections)
+        if (rn2(10)) {
+            // Not a specific bad ring type: evaluate !rn2(9) for curse chance
+            rn2(9);
+        }
         break;
     }
     case AMULET_CLASS:
@@ -384,8 +446,16 @@ function mksobj_init(otmp, artif) {
         break;
     }
     case TOOL_CLASS: {
-        // Type-specific — simplified stubs for common tool types
-        // Most tools: no extra RNG or simple init
+        if (otyp === CHEST || otyp === LARGE_BOX) {
+            otmp.olocked = !!rn2(5);
+            otmp.otrapped = !rn2(10);
+            if (otmp.otrapped) rn2(100); // tknown: obvious trap check
+            mkbox_cnts(otmp);
+        } else if (otyp === ICE_BOX || otyp === SACK || otyp === OILSKIN_SACK ||
+                   otyp === BAG_OF_HOLDING) {
+            mkbox_cnts(otmp);
+        }
+        // Other tools (lanterns, candles, etc.) handled as no-RNG for now
         break;
     }
     default:
@@ -431,8 +501,8 @@ function mkobj(oclass, artif) {
         }
     }
     // Select type within class using rnd(oclass_prob_totals[oclass])
-    // Based on session data, all class totals appear to be 1000
-    const typProb = rnd(1000);
+    // RING_CLASS has 28 items each prob=1; all other classes sum to 1000
+    const typProb = (oclass === RING_CLASS) ? rnd(28) : rnd(1000);
     return mksobj_from_class(oclass, typProb, false, artif);
 }
 
