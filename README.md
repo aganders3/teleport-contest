@@ -4,6 +4,82 @@
 adventurers traveling with a small swarm of LLM coding assistants.
 [Fork it now.](https://github.com/davidbau/teleport-contest/fork)*
 
+---
+
+## Our Implementation Strategy
+
+**Category:** Agentic (Claude + Claude Code)
+
+**Approach:** Manual JS port of each C source file, verified function-by-function
+against the session RNG logs. Each RNG call in the session JSON is tagged with
+`filename:line`, letting us slice per-file golden specs and confirm parity before
+moving on. No transpiler; no WASM in production output.
+
+**Core insight:** PRNG errors cascade — one wrong call in `o_init` shifts every
+subsequent call in `mklev`, `makemon`, `u_init`, and each move step. We verify
+each ported module in isolation (using the `@ file.c:line` annotations in session
+logs) before wiring it into the game loop.
+
+### Architecture
+
+One JS module per C source file. Key files:
+
+| JS file | C source | Status |
+|---------|----------|--------|
+| `js/isaac64.js` | `nethack-c/upstream/src/isaac64.c` | Frozen (provided) |
+| `js/rng.js` | RNG wrappers | Done |
+| `js/o_init.js` | `o_init.c` | Done — shuffles object descriptions |
+| `js/dungeon.js` | `dungeon.c` | Done — branch/level layout |
+| `js/mklev.js` | `mklev.c` + `mkobj.c` + `makemon.c` + `sp_lev.c` + `rect.c` | Core done; makedog/u_init wiring in progress |
+| `js/attrib.js` | `attrib.c` | Done — init_attr / vary_init_attr |
+| `js/fastforward.js` | Scaffold | Seed8000-only stub; being replaced module by module |
+| `js/allmain.js` | `allmain.c` | Game loop wired; u_init_role replacing fastforward stubs |
+| `js/roles.js` | `role.c` | Role/race tables |
+| `js/vision.js` | `vision.c` | Line-of-sight |
+| `js/display.js` | `display.c` | Screen rendering |
+| `js/cmd.js` | `cmd.c` | Command dispatch |
+
+### Progress (seed8000 is fully green; working toward other sessions)
+
+**Initialization phase** (before first keystroke, ~3000 RNG calls for seed8000):
+
+- [x] `o_init.c` — object description shuffle (calls 0–200) ✓
+- [x] `dungeon.c` — branch/level layout (calls 201–298) ✓
+- [x] `u_init_misc` — handedness roll (call 299) ✓
+- [x] `nhlib.lua` shuffles (calls 300–301) ✓
+- [x] `mklev.c` — room/corridor/door/stair generation (calls 302–~2200) ✓
+- [x] `mkobj.c` — object creation in rooms (integrated into mklev.js) ✓
+- [x] `makemon.c` — monster placement (integrated into mklev.js) ✓
+- [x] `attrib.c` — `init_attr` / `vary_init_attr` ✓
+- [ ] `dog.c` — `makedog()` / `collect_coords` — **next task**
+- [ ] `u_init.c` — role-specific inventory (`u_init_role`) for all roles (currently hardcoded Tourist)
+- [ ] Chargen (`player_selection`) for sessions with no role in nethackrc
+
+**Per-move phase** (per step after first keystroke):
+
+- [x] Basic movement (hjklyubn) ✓
+- [x] Monster AI fastforward (per-move RNG) ✓
+- [ ] Combat, item use, traps, stairs — partially implemented
+
+**Session scores (as of last push):**
+
+| Session | RNG matched | Screens |
+|---------|-------------|---------|
+| seed8000-tourist-starter | 3130/3130 (100%) | 23/23 ✓ |
+| seed0030-ten-diverse-deaths | ~partial | 0/N |
+| seed0060-orc-rogue | 2330/3626 (64%) | 0/41 |
+| seed0013-rogue | partial | 0/N |
+| most others | <50% | 0/N |
+
+**Immediate roadmap:**
+
+1. Implement `makedog()` + `collect_coords` (dog.c / teleport.c)
+2. Implement `u_init_role()` for all 13 roles (replace fastforward hardcodes)
+3. Implement chargen (`player_selection`) for sessions without role in nethackrc
+4. Per-move: monster AI, combat, item handling
+
+---
+
 NetHack is one of the longest-lived and most peculiar open source
 programs ever written. After 46 years of continuous development —
 tracing its lineage from Rogue (1980) to Hack (1982) to NetHack —
