@@ -2437,11 +2437,13 @@ function mineralize(kelp_pool, kelp_moat, goldprob, gemprob, skip_lvl_checks) {
                 if (rn2(1000) < goldprob) {
                     const otmp = mksobj(GOLD_PIECE, false, false);
                     otmp.quan = 1 + rnd(goldprob * 3);
+                    rn2(3); // C ref: mklev.c:1520 — add_to_buried vs place_object check
                 }
                 if (rn2(1000) < gemprob) {
                     const cnt = rnd(2 + Math.trunc(dunLevel / 3));
                     for (let i = 0; i < cnt; i++) {
                         mkobj(GEM_CLASS, false);
+                        rn2(3); // C ref: mklev.c:1533 — add_to_buried vs place_object check
                     }
                 }
             }
