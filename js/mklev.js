@@ -439,10 +439,12 @@ function mksobj_init(otmp, artif) {
         if (rn2(10)) blessorcurse(otmp, 10);
         break;
     case ROCK_CLASS: {
-        // STATUE: rndmonnum() for corpsenm + rn2(level_difficulty/2+10) for optional spellbook
+        // STATUE: rndmonnum() for corpsenm, then spellbook check if NOT verysmall
         if (otyp === STATUE) {
             otmp.corpsenm = rndmonnum(); // actual monster index
-            rn2(Math.trunc(level_difficulty() / 2) + 10);
+            // C ref: mksobj_init:1154 — !verysmall(ptr) && rn2(level_difficulty/2+10) > 10
+            if (!VERYSMALL_MONS.has(otmp.corpsenm))
+                rn2(Math.trunc(level_difficulty() / 2) + 10);
         }
         break;
     }
@@ -593,6 +595,10 @@ function mksobj_at(otyp, x, y, init, artif) {
 function mkobj_at(oclass, x, y, artif) {
     return mkobj(oclass, artif);
 }
+
+// Monster indices with MZ_TINY size (verysmall() returns true for these)
+// Extracted from monsters.h SIZ(..., MZ_TINY) entries in order
+const VERYSMALL_MONS = new Set([0,1,2,3,5,6,9,53,54,65,90,91,92,93,96,97,118,119,128,219,329,330,331,333,334]);
 
 // C ref: mkobj.c rndmonnum → rndmonnum_adj(0,0) → rndmonst_adj(0,0)
 function rndmonnum() {
