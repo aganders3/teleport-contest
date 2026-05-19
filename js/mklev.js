@@ -304,7 +304,13 @@ function mkbox_cnts(box) {
                 tprob -= iprob;
                 if (tprob <= 0) { oclass = iclass; break; }
             }
-            mkobj(oclass, false);
+            const boxItem = mkobj(oclass, false);
+            if (oclass === GEM_CLASS && boxItem && boxItem.otyp > 900) {
+                // ROCK was selected (cumulative boundary at 900): reroll
+                // C ref: mkbox_cnts while(otyp==ROCK) rnd_class(DILITHIUM,LOADSTONE)
+                // rnd_class sum = probs from DILITHIUM_CRYSTAL to LOADSTONE = 882
+                rnd(882);
+            }
             if (oclass === COIN_CLASS) {
                 rnd(level_difficulty() + 2);
                 rnd(75);
@@ -435,11 +441,8 @@ function mksobj_init(otmp, artif) {
     case ROCK_CLASS: {
         // STATUE: rndmonnum() for corpsenm + rn2(level_difficulty/2+10) for optional spellbook
         if (otyp === STATUE) {
-            rndmonnum(); // sets corpsenm
-            otmp.corpsenm = 1; // mark as set (non-NON_PM)
-            // rn2(level_difficulty/2+10) > 10: never true at level 1 (rn2(10) max is 9)
+            otmp.corpsenm = rndmonnum(); // actual monster index
             rn2(Math.trunc(level_difficulty() / 2) + 10);
-            // If result > 10: mkobj(SPBOOK_no_NOVEL, false) — never at level 1
         }
         break;
     }
@@ -545,11 +548,12 @@ function mksobj(otyp, init, artif) {
     // CORPSE: set corpsenm via rndmonnum if still NON_PM, then gender + timeout
     // STATUE: corpsenm set by mksobj_init if init=true; just gender check
     if (otyp === CORPSE && otmp.corpsenm === -1) {
-        rndmonnum();
-        otmp.corpsenm = 1; // mark as set
+        otmp.corpsenm = rndmonnum();
     }
-    if ((otyp === CORPSE || otyp === STATUE) && otmp.corpsenm !== -1) {
-        rn2(2); // gender check (rn2(2) unless clearly gendered)
+    if ((otyp === CORPSE || otyp === STATUE) && otmp.corpsenm >= 0) {
+        const gflags = (otmp.corpsenm >= 0 ? MONS[otmp.corpsenm]?.[3] : 0) ?? 0;
+        const M2_MALE = 0x10000, M2_FEMALE = 0x20000, M2_NEUTER = 0x40000;
+        if (!(gflags & (M2_MALE | M2_FEMALE | M2_NEUTER))) rn2(2);
     }
     if (otyp === CORPSE) {
         start_corpse_timeout(otmp);
@@ -592,7 +596,7 @@ function mkobj_at(oclass, x, y, artif) {
 
 // C ref: mkobj.c rndmonnum → rndmonnum_adj(0,0) → rndmonst_adj(0,0)
 function rndmonnum() {
-    rndmonst_adj(0, 0);
+    return rndmonst_adj(0, 0);
 }
 
 function mkgold(amount, x, y) {
@@ -2516,8 +2520,9 @@ function mineralize(kelp_pool, kelp_moat, goldprob, gemprob, skip_lvl_checks) {
                 if (rn2(1000) < gemprob) {
                     const cnt = rnd(2 + Math.trunc(dunLevel / 3));
                     for (let i = 0; i < cnt; i++) {
-                        mkobj(GEM_CLASS, false);
-                        rn2(3); // C ref: mklev.c:1533 — add_to_buried vs place_object check
+                        const gem = mkobj(GEM_CLASS, false);
+                        // C ref: mklev.c:1530 — ROCK is discarded without rn2(3)
+                        if (!(gem && gem.otyp > 900)) rn2(3);
                     }
                 }
             }
