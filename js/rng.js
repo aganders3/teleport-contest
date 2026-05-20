@@ -50,9 +50,11 @@ export function rnd(x) {
 export function rn1(x, y) { return rn2(x) + y; }
 
 // C ref: d(n, x) — roll n dice of x sides
+// Logs as a single "d(n,x)=result" entry; internal rnd() calls are NOT logged.
 export function d(n, x) {
     let sum = 0;
-    for (let i = 0; i < n; i++) sum += rnd(x);
+    for (let i = 0; i < n; i++) sum += RND(x) + 1; // raw draw, no rnd() log
+    if (_rngLogEnabled) _rngLog.push(`d(${n},${x})=${sum}`);
     return sum;
 }
 

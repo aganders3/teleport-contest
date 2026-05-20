@@ -2712,3 +2712,101 @@ function level_finalize_topology() {
         if (rm && rm.rtype != null) rm.orig_rtype = rm.rtype;
     }
 }
+
+// C ref: teleport.c collect_coords() — generate RNG from ring shuffles
+// CC_NO_FLAGS: scramble=true, ring_pairs=false, passend=true per ring.
+// For each radius 1..maxradius, count border cells within map bounds, then
+// Fisher-Yates shuffle calls: rn2(n), rn2(n-1), ..., rn2(2).
+function collect_coords_rng(cx, cy, maxradius) {
+    // expand maxradius to map bounds if 0
+    if (maxradius === 0) {
+        const rowrange = cy < ROWNO / 2 ? ROWNO - 1 - cy : cy;
+        const colrange = cx < COLNO / 2 ? COLNO - 1 - cx : cx;
+        maxradius = Math.max(rowrange, colrange);
+    }
+    for (let r = 1; r <= maxradius; r++) {
+        const lox = cx - r, hix = cx + r;
+        const loy = cy - r, hiy = cy + r;
+        let n = 0;
+        for (let y = Math.max(loy, 0); y <= hiy && y < ROWNO; y++) {
+            for (let x = Math.max(lox, 1); x <= hix && x < COLNO; x++) {
+                if (x !== lox && x !== hix && y !== loy && y !== hiy) continue;
+                n++;
+            }
+        }
+        // Fisher-Yates shuffle: rn2(n)...rn2(2)
+        while (n > 1) { rn2(n); n--; }
+    }
+}
+
+// C ref: makemon.c adj_lev() — adjust monster level for dungeon depth/player level
+// depth = dungeon level depth (1 for first level), ulevel = player level
+function adj_lev(mlevel, depth, ulevel) {
+    let tmp = mlevel;
+    if (tmp > 49) return 50;
+    const diff2 = depth - tmp;
+    if (diff2 < 0) tmp--;
+    else tmp += Math.trunc(diff2 / 5);
+    const plAdj = ulevel - mlevel;
+    if (plAdj > 0) tmp += Math.trunc(plAdj / 4);
+    const upper = Math.min(Math.trunc(3 * mlevel / 2), 49);
+    return Math.max(0, Math.min(tmp, upper));
+}
+
+// Pet mlevel: KITTEN=2, LITTLE_DOG=2, PONY=3 (from LVL() in monsters.h)
+const PET_MLEVEL = { cat: 2, dog: 2, pony: 3 };
+
+// C ref: dog.c makedog() — create starting pet, consuming RNG for placement and HP
+export function makedog() {
+    const g = game;
+    const preferred_pet = g.preferred_pet || '';
+
+    // No pet requested (Tourist with pettype:none, or !pet option)
+    if (preferred_pet === 'n') return;
+
+    // Determine pet type from role's petnum, then preferred_pet, then random
+    const roleData = g.urole_data;
+    const rolePetnum = roleData?.petnum; // 'CAT', 'DOG', 'PONY', or null/undefined for NON_PM
+
+    let petKind; // 'cat', 'dog', or 'pony'
+    if (rolePetnum === 'CAT') {
+        petKind = 'cat';
+    } else if (rolePetnum === 'DOG') {
+        petKind = 'dog';
+    } else if (rolePetnum === 'PONY') {
+        petKind = 'pony';
+    } else {
+        // NON_PM — check preferred_pet then random
+        if (preferred_pet === 'c') petKind = 'cat';
+        else if (preferred_pet === 'd') petKind = 'dog';
+        else if (preferred_pet === 'h') petKind = 'pony';
+        else petKind = rn2(2) ? 'cat' : 'dog'; // rn2(2): 0=dog, 1=cat
+    }
+
+    // enexto_core: collect_coords with maxradius=3 first (covers within 3 steps)
+    // For most starting positions in a dungeon room, this finds a valid spot.
+    const ux = g.u?.ux ?? 1, uy = g.u?.uy ?? 1;
+    collect_coords_rng(ux, uy, 3);
+    // Note: if no valid position found within radius 3, a second call with
+    // maxradius=0 would follow. In practice the starting room always has room.
+
+    // next_ident() for pet's m_id
+    next_ident();
+
+    // newmonhp: d(adj_lev(mlevel), 8), or rnd(4) if adj_lev=0
+    const mlevel = PET_MLEVEL[petKind] ?? 2;
+    const depth = g.u?.uz?.dlevel ?? 1;
+    const ulevel = g.u?.ulevel ?? 1;
+    const mlev = adj_lev(mlevel, depth, ulevel);
+    if (mlev === 0) {
+        rnd(4);
+    } else {
+        d(mlev, 8);
+    }
+
+    // gender check: rn2(2) unless monster is sex-locked
+    // KITTEN and LITTLE_DOG are both-sex-ok; PONY is neuter? Let me check:
+    // PONY M2 flags: M2_DOMESTIC — not M2_MALE or M2_FEMALE, not neuter
+    // So all three pets: femaleok=true, maleok=true → rn2(2)
+    rn2(2);
+}

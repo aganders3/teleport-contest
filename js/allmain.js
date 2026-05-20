@@ -6,7 +6,7 @@
 
 import { game } from './gstate.js';
 import { rn2 } from './rng.js';
-import { mklev, l_nhcore_init, u_on_upstairs } from './mklev.js';
+import { mklev, l_nhcore_init, u_on_upstairs, makedog } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
@@ -43,6 +43,16 @@ export async function newgame() {
     await mklev();
 
     // Fill rooms + mineralize now handled by mklev() → makelevel() + level_finalize_topology()
+
+    // C ref: allmain.c newgame() — u_on_upstairs() before makedog() before u_init
+    // Place hero on upstairs (no RNG consumed); must happen before makedog()
+    // because makedog's collect_coords needs g.u.ux / g.u.uy.
+    u_on_upstairs();
+
+    // C ref: dog.c makedog() — create starting pet.
+    // Tourist sessions use pettype:none → preferred_pet='n' → immediate return.
+    // Other roles: calls pet_type() (rn2(2) if random) + collect_coords + HP/gender.
+    makedog();
 
     // Fast-forward through post-mklev startup RNG calls.
     // Covers: u_init_role, ini_inv, attributes, moveloop_preamble.
@@ -90,10 +100,6 @@ export async function newgame() {
         { category: 'Scrolls', items: ['scroll of magic mapping (ANDOVA BEGARIN)'] },
         { category: 'Potions', items: ['potion of extra healing (murky)'] },
     ];
-
-    // C ref: allmain.c newgame() → u_on_upstairs()
-    // Places hero on upstair, or special stair, or random room position.
-    u_on_upstairs();
 
     // Initial display
     init_vision_globals();
