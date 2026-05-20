@@ -8,12 +8,21 @@ adventurers traveling with a small swarm of LLM coding assistants.
 
 ## Our Implementation Strategy
 
-**Category:** Agentic (Claude + Claude Code)
+**Category:** Transpiled/Agentic hybrid (Claude + Claude Code)
 
-**Approach:** Manual JS port of each C source file, verified function-by-function
+**Approach:** Hand-port C source files to JavaScript, verified function-by-function
 against the session RNG logs. Each RNG call in the session JSON is tagged with
 `filename:line`, letting us slice per-file golden specs and confirm parity before
-moving on. No transpiler; no WASM in production output.
+moving on.
+
+The emscripten asm.js build serves as a **development oracle only** — we use it
+to generate golden RNG call sequences at arbitrary seeds and catch bugs before they
+reach session tests. It does not run in production; all scored code is hand-written.
+
+For genuinely difficult-to-port, rarely-changing sections we may ship a thin asm.js
+shim rather than a full port. Since the Phase 2 diff penalty only applies to code we
+*change*, a stable shim has zero penalty — but we use this sparingly because asm.js
+regeneration produces enormous diffs even for small C changes.
 
 **Core insight:** PRNG errors cascade — one wrong call in `o_init` shifts every
 subsequent call in `mklev`, `makemon`, `u_init`, and each move step. We verify
