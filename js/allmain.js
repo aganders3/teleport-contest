@@ -5,7 +5,7 @@
 // Real mklev.js handles level generation for screen parity.
 
 import { game } from './gstate.js';
-import { rn2 } from './rng.js';
+import { rn2, rnd } from './rng.js';
 import { mklev, l_nhcore_init, u_on_upstairs, makedog } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline } from './display.js';
@@ -55,8 +55,9 @@ export async function newgame() {
     makedog();
 
     // Fast-forward through post-mklev startup RNG calls.
-    // Covers: u_init_role, ini_inv, attributes, moveloop_preamble.
-    fastforward_post_mklev();
+    // Covers: u_init_role, ini_inv, attributes.
+    // com_pager("legacy") is simulated inside (nhlib.lua shuffle + nhgetch) if legacy.
+    await fastforward_post_mklev();
 
     // Gold count set by u_init_role() via umoney0
     g._goldCount = g.u.umoney0 ?? 0;
@@ -126,6 +127,16 @@ export async function newgame() {
 // C ref: allmain.c moveloop_core()
 export async function moveloop_core() {
     const g = game;
+
+    // moveloop_preamble: rnd(9000)+rnd(30) at the start of the first iteration.
+    // C ref: allmain.c moveloop_preamble() called once at the top of moveloop().
+    // For sessions without flags.legacy: this is the first nhgetch so these land
+    // in step0. For legacy sessions: nhgetch fired during com_pager in newgame(),
+    // so these land in step1.
+    if (!g._moveloopPreambleDone) {
+        rnd(9000); rnd(30);
+        g._moveloopPreambleDone = true;
+    }
 
     // Fast-forward per-step RNG (monster movement, regen, sounds, hunger).
     // Only advance when g.moves increased (non-movement commands don't trigger

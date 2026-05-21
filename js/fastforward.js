@@ -8,6 +8,7 @@
 import { rn2, rnd, d, rne, rnz } from "./rng.js";
 import { init_attr, vary_init_attr } from "./attrib.js";
 import { u_init_inventory_attrs } from "./u_init.js";
+import { nhgetch } from "./input.js";
 import { game } from "./gstate.js";
 
 // o_init: randomize colors, object shuffles, nhlib.lua random calls
@@ -73,15 +74,26 @@ export function fastforward_u_init_misc() {
     g.u.uen = g.u.uenmax = g.u.uenpeak = en;
 }
 
-// Post-mklev startup: u_init_role, ini_inv, attributes, moveloop_preamble
-export function fastforward_post_mklev() {
+// Post-mklev startup: u_init_role, ini_inv, attributes.
+// C ref: allmain.c newgame() — u_init_inventory_attrs, init_attr, vary_init_attr,
+//   then com_pager("legacy") if flags.legacy (creates a Lua state loading nhlib.lua,
+//   which runs shuffle(align) → rn2(3)+rn2(2)), then com_pager calls nhgetch.
+// moveloop_preamble (rnd(9000)+rnd(30)) is NOT called here; it runs at the start
+// of moveloop_core, before the first rhack/nhgetch in the main loop.
+export async function fastforward_post_mklev() {
+    const g = game;
     // Real inventory initialization: role, race, gold (C: u_init_inventory_attrs)
     u_init_inventory_attrs();
     // init_attr(75) + vary_init_attr(): real attribute distribution (35 calls)
     init_attr(75);
     vary_init_attr();
-    // moveloop_preamble: seed8000 records these RNG calls in step 0
-    rnd(9000); rnd(30);
+    // u_init_carry_attr_boost: adjusts STR/CON if overloaded — typically no RNG calls.
+    // com_pager("legacy"): if flags.legacy (default true), creates Lua state loading
+    // nhlib.lua which runs shuffle(align) → rn2(3)+rn2(2), then calls nhgetch().
+    if (g.flags?.legacy !== false) {
+        rn2(3); rn2(2); // nhlib.lua shuffle(align) from com_pager Lua state creation
+        await nhgetch(); // com_pager waits for space to dismiss the legacy message
+    }
 }
 
 // Per-step leaf RNG calls

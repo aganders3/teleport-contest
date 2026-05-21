@@ -88,7 +88,7 @@ export class NethackGame {
 
         // Parse nethackrc
         const opts = parseNethackrc(this._nethackrc);
-        g.flags = { verbose: true, ...opts.flags };
+        g.flags = { verbose: true, legacy: true, ...opts.flags };
         // C ref: options.c set_playmode() — debug/wizard mode forces plname="wizard"
         g.plname = g.flags.debug ? 'wizard' : (opts.name || 'Hero');
         g.iflags = { ...opts.iflags };
