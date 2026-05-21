@@ -7,6 +7,7 @@
 
 import { rn2, rnd, d, rne, rnz } from "./rng.js";
 import { init_attr, vary_init_attr } from "./attrib.js";
+import { u_init_inventory_attrs } from "./u_init.js";
 import { game } from "./gstate.js";
 
 // o_init: randomize colors, object shuffles, nhlib.lua random calls
@@ -73,20 +74,9 @@ export function fastforward_u_init_misc() {
 }
 
 // Post-mklev startup: u_init_role, ini_inv, attributes, moveloop_preamble
-// Inventory section (87 calls) is hardcoded for seed8000 Tourist.
-// Attribute section replaced with real init_attr(75) + vary_init_attr().
-// Ends with moveloop_preamble (seed8000 records these in step 0).
 export function fastforward_post_mklev() {
-    // u_init_role + ini_inv: Tourist-specific inventory (87 calls, seed8000 hardcoded)
-    rnd(1000); rn2(20); rnd(2); rn2(6); rn2(11); rn2(10); rn2(10); rn2(100); rn2(20); rn2(1);
-    rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000);
-    rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2);
-    rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6); rnd(1000); rnd(2); rn2(6);
-    rn2(3); rn2(4); rn2(5); rn2(7); rn2(8); rn2(11); rn2(15); rn2(16); rn2(21); rn2(15); rn2(10);
-    rn2(6); rn2(1); rnd(2); rn2(4); rn2(2); rnd(2); rn2(4); rn2(2); rn2(1); rnd(2); rn2(4);
-    rnd(2); rn2(4); rnd(2); rn2(4); rnd(2); rn2(4); rn2(1); rnd(2); rn2(10); rn2(11); rn2(10);
-    rn2(10); rn2(1); rnd(2); rn2(70); rn2(1); rn2(1); rnd(2); rn2(1); rn2(25); rn2(25); rn2(25);
-    rn2(20); rn2(1); rnd(2);
+    // Real inventory initialization: role, race, gold (C: u_init_inventory_attrs)
+    u_init_inventory_attrs();
     // init_attr(75) + vary_init_attr(): real attribute distribution (35 calls)
     init_attr(75);
     vary_init_attr();

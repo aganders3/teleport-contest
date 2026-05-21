@@ -58,9 +58,8 @@ export async function newgame() {
     // Covers: u_init_role, ini_inv, attributes, moveloop_preamble.
     fastforward_post_mklev();
 
-    // Hardcoded player state for seed8000 Tourist.
-    // Contestants: port u_init to compute these from game PRNG.
-    g._goldCount = 757;
+    // Gold count set by u_init_role() via umoney0
+    g._goldCount = g.u.umoney0 ?? 0;
     g.u.ulevel = 1;
     // g.u.uhp/uhpmax and g.u.uen/uenmax set by fastforward_u_init_misc() above
     g.u.uac = 10; g.u.uexp = 0;
