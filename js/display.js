@@ -192,10 +192,11 @@ export async function docrt() {
 }
 
 // ── Serialize a map row with DEC line-drawing and ANSI colors ──
-function render_map_row(y) {
+// maxX: if set, only render cells with map x ≤ maxX (used for pager overlay).
+function render_map_row(y, maxX = COLNO - 1) {
     if (!game.level) return '';
     let firstCol = -1, lastCol = -1;
-    for (let x = 1; x < COLNO; x++) {
+    for (let x = 1; x <= Math.min(maxX, COLNO - 1); x++) {
         const loc = game.level.at(x, y);
         if (loc?.disp_ch && loc.disp_ch !== ' ') {
             if (firstCol < 0) firstCol = x;
@@ -445,32 +446,39 @@ export function buildLegacyPagerScreen(pagerLines, textCol) {
         const y = row - 1;
         const pagerLine = pagerLines[row] || '';
 
-        // Last visible map col for this row (map x is 1-indexed; cursor after
-        // render_map_row lands at that x value in 0-indexed terminal col space)
-        let mapLastCol = -1;
-        if (game.level) {
-            for (let x = 1; x < COLNO; x++) {
-                const loc = game.level.at(x, y);
-                if (loc?.disp_ch && loc.disp_ch !== ' ') mapLastCol = x;
-            }
-        }
-
         let nsp = 0;
         while (nsp < pagerLine.length && pagerLine[nsp] === ' ') nsp++;
         const content = pagerLine.slice(nsp);
         const targetCol = textCol + nsp;
 
         if (!content) {
-            parts.push(mapLastCol >= 0 ? render_map_row(y) : '');
-        } else if (mapLastCol < 0) {
-            parts.push(targetCol > 4 ? `\x1b[${targetCol}C${content}` : ' '.repeat(targetCol) + content);
+            // Empty pager line: show full map row (no text to overlay).
+            let hasMap = false;
+            if (game.level) {
+                for (let x = 1; x < COLNO; x++) {
+                    if (game.level.at(x, y)?.disp_ch > ' ') { hasMap = true; break; }
+                }
+            }
+            parts.push(hasMap ? render_map_row(y) : '');
         } else {
-            const gap = targetCol - mapLastCol;
-            if (gap <= 0) {
-                parts.push(render_map_row(y));
+            // C com_pager does clrtoeol from textCol-1, so only map cells at
+            // x ≤ textCol-1 (terminal col ≤ textCol-2) survive.
+            let leftLastCol = -1;
+            if (game.level) {
+                for (let x = 1; x <= Math.min(textCol - 1, COLNO - 1); x++) {
+                    const loc = game.level.at(x, y);
+                    if (loc?.disp_ch && loc.disp_ch !== ' ') leftLastCol = x;
+                }
+            }
+            if (leftLastCol < 0) {
+                // No visible map to the left — just pager text.
+                parts.push(targetCol > 4 ? `\x1b[${targetCol}C${content}` : ' '.repeat(targetCol) + content);
             } else {
+                // Map to the left, then pager text (covering any map at targetCol+).
+                const partialMap = render_map_row(y, leftLastCol);
+                const gap = targetCol - leftLastCol;
                 const gapStr = gap > 4 ? `\x1b[${gap}C` : ' '.repeat(gap);
-                parts.push(render_map_row(y) + gapStr + content);
+                parts.push(partialMap + gapStr + content);
             }
         }
     }
