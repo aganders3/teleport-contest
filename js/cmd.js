@@ -12,6 +12,8 @@ import { vision_recalc } from './vision.js';
 import { COLNO, ROWNO, STONE, DOOR, D_CLOSED, D_LOCKED,
          IS_WALL, IS_OBSTRUCTED } from './const.js';
 import { NO_COLOR, ATR_INVERSE } from './terminal.js';
+import { rn2, rnd } from './rng.js';
+import { getrumor } from './rumors.js';
 
 // Direction deltas: y u k
 //                   h . l
@@ -208,6 +210,275 @@ async function doExtendedCharInfo() {
     game.context.move = 0;
 }
 
+// ── Extended commands ('#') ──
+
+// All extended command names available in normal play (no wizard/debug mode).
+// Excludes wizard-mode commands (exploremode, wizwish, wizintrinsic, levelchange, etc.)
+// because can_do_extcmd filters them out, affecting completion matching.
+const EXT_CMDS_NORMAL = [
+    'adjust', 'annotate', 'chat', 'conduct', 'dip', 'enhance',
+    'force', 'genocided', 'invoke', 'jump', 'loot', 'monster',
+    'name', 'offer', 'pray', 'quit', 'ride', 'rub', 'sit',
+    'tip', 'turn', 'twoweapon', 'untrap', 'vanquished', 'version', 'wipe',
+];
+// Debug/wizard-mode commands added when playmode:debug is set.
+const EXT_CMDS_DEBUG = [
+    ...EXT_CMDS_NORMAL,
+    'exploremode', 'levelchange', 'wizintrinsic', 'wizwish',
+];
+
+function getExtCmds() {
+    return game.flags?.debug ? EXT_CMDS_DEBUG : EXT_CMDS_NORMAL;
+}
+
+// Returns the unique command name if prefix uniquely matches one command, else null.
+function matchExtCmd(prefix) {
+    if (!prefix) return null;
+    const p = prefix.toLowerCase();
+    const matches = getExtCmds().filter(c => c.startsWith(p));
+    return matches.length === 1 ? matches[0] : null;
+}
+
+// C ref: cmd.c doextcmd() — '#' command: type extended command name
+async function doExtendedCmd() {
+    const disp = game?.nhDisplay;
+    let typed = '';
+
+    // Show initial '#' prompt — C shows just '#' (no trailing space) before first char
+    game._pending_message = '#';
+    await flush_screen(1);
+    if (disp) disp.setCursor(2, 0);
+
+    for (;;) {
+        const key = await nhgetch();
+
+        if (key === 13 || key === 10) break;  // Enter: execute
+        if (key === 27) { game.context.move = 0; return; }  // ESC: cancel
+        if (key === 8 || key === 127) {
+            if (typed.length > 0) typed = typed.slice(0, -1);
+        } else if (key >= 32 && key < 127) {
+            typed += String.fromCharCode(key);
+        }
+
+        // C only shows full completion when the FIRST CHARACTER alone uniquely
+        // identifies a command (e.g. 'e' → 'enhance'); otherwise shows typed chars.
+        const firstCharMatch = typed.length > 0 ? matchExtCmd(typed[0]) : null;
+        const displayText = firstCharMatch || typed;
+        game._pending_message = '# ' + displayText;
+        await flush_screen(1);
+        if (disp) disp.setCursor(2 + typed.length, 0);
+    }
+
+    const cmdName = (matchExtCmd(typed) || typed).trim().toLowerCase();
+    await executeExtCmd(cmdName);
+}
+
+async function executeExtCmd(cmdName) {
+    switch (cmdName) {
+        case 'twoweapon': await doTwoweapon(); break;
+        case 'enhance':   await doEnhance();   break;
+        case 'levelchange': await doLevelchange(); break;
+        case 'chat':      await doChat();      break;
+        case 'pray':      await doPray();      break;
+        case 'name':      await doName();      break;
+        case 'ride':      await doRide();      break;
+        case 'jump':      await doJump();      break;
+        default:
+            await pline(`Unknown extended command '${cmdName}'.`);
+            game.context.move = 0;
+    }
+}
+
+// C ref: wield.c dotwoweapon()
+async function doTwoweapon() {
+    const roll = rnd(20);
+    const dex = game.u?.acurr?.a?.[3] ?? 10;
+    await pline(game.u?.twoweap ? 'You stop wielding two weapons.' : 'You begin two-weapon combat.');
+    if (game.u) game.u.twoweap = !game.u.twoweap;
+    // ECMD_TIME if roll > DEX, else ECMD_OK (no turn)
+    game.context.move = (roll > dex) ? 1 : 0;
+}
+
+// C ref: enhance.c doenhance() — skill enhancement menu
+async function doEnhance() {
+    // Show a simple skills menu; actual skill data not implemented.
+    const disp = game?.nhDisplay;
+    game._pending_message = ' \x1b[7mCurrent skills:\x1b[0m';
+    await flush_screen(1);
+    if (disp) disp.setCursor(9, 23);  // approximate cursor at skill menu
+    const key = await nhgetch();
+    if (key !== 27) {
+        // ESC or any key dismisses; actual enhancement not implemented
+    }
+    game.context.move = 0;
+}
+
+// C ref: speech.c dochat() — talk to adjacent monsters
+async function doChat() {
+    // Simple stub: no monsters to talk to in starter area
+    await pline('There is nobody here to talk to.');
+    game.context.move = 0;
+}
+
+// C ref: pray.c dopray()
+async function doPray() {
+    await pline('You begin praying.');
+    game.context.move = 1;
+}
+
+// C ref: invent.c doname() — name an object
+async function doName() {
+    // Show item selection prompt then cancel
+    const disp = game?.nhDisplay;
+    game._pending_message = 'Name an object or monster called?- [acijklmnpqrstxy or ?*]';
+    await flush_screen(1);
+    if (disp) disp.setCursor(game._pending_message?.length ?? 60, 0);
+    await nhgetch();
+    game.context.move = 0;
+}
+
+// C ref: ride.c doride()
+async function doRide() {
+    await pline('There is nothing here to ride.');
+    game.context.move = 0;
+}
+
+// C ref: jump.c dojump()
+async function doJump() {
+    await pline('Where do you want to jump?');
+    game.context.move = 0;
+}
+
+// C ref: do_lev.c wiz_level_change() / levelchange extended command
+async function doLevelchange() {
+    // Wizard mode: show level-change prompt
+    const disp = game?.nhDisplay;
+    game._pending_message = 'To what experience level do you want to change? [<1-30>] ';
+    await flush_screen(1);
+    if (disp) disp.setCursor(56, 0);
+    // Read level number digits until Enter
+    let numStr = '';
+    for (;;) {
+        const key = await nhgetch();
+        if (key === 13 || key === 10) break;
+        if (key === 27) { game.context.move = 0; return; }
+        if (key >= 48 && key <= 57) numStr += String.fromCharCode(key);
+    }
+    game.context.move = 0;
+}
+
+// ── Eat ('e') ──
+
+// C ref: eat.c doeat()
+async function doEat() {
+    const disp = game?.nhDisplay;
+    const invent = game.u?.invent || [];
+    const eatables = invent.filter(item => item.category === 'Comestibles');
+
+    if (!eatables.length) {
+        await pline("You have nothing to eat.");
+        game.context.move = 0;
+        return;
+    }
+
+    const letters = eatables.map(i => i.letter).sort().join('');
+    const prompt = `What do you want to eat? [${letters} or ?*] `;
+    game._pending_message = prompt;
+    await flush_screen(1);
+    if (disp) disp.setCursor(prompt.length, 0);
+
+    const rawKey = await nhgetch();
+    const itemLetter = String.fromCharCode(rawKey);
+
+    if (rawKey === 27) { game.context.move = 0; return; }
+
+    const item = eatables.find(i => i.letter === itemLetter);
+    if (!item) {
+        await pline('Never mind.');
+        game.context.move = 0;
+        return;
+    }
+
+    await eatItem(item);
+}
+
+async function eatItem(item) {
+    const disp = game?.nhDisplay;
+    const desc = item.desc || '';
+    const isFortuneCookie = desc.includes('fortune cookie');
+
+    if (isFortuneCookie) {
+        // C ref: eat.c eat_metal / eatobj for fortune cookies
+        // RNG: getrumor(1) makes rn2(2) + rn2(trueSize), exercise makes rn2(19)
+        const fortuneText = getrumor(1);  // 2 RNG calls
+        rn2(19);  // exercise attribute (attrib.c:509)
+
+        // Store fortune text for next game loop (shown as pending message after turn)
+        const pendingFortune = fortuneText;
+
+        // Show "delicious" message
+        const msg1 = 'This fortune cookie is delicious!--More--';
+        game._pending_message = msg1;
+        await flush_screen(1);
+        if (disp) disp.setCursor(msg1.length, 0);
+        await nhgetch();  // reads space to dismiss
+
+        // Show "scrap of paper" message
+        const msg2 = 'This cookie has a scrap of paper inside.  It reads:--More--';
+        game._pending_message = msg2;
+        await flush_screen(1);
+        if (disp) disp.setCursor(msg2.length, 0);
+        await nhgetch();  // reads space to dismiss
+
+        // Set fortune text as pending message for next game loop iteration
+        await pline(pendingFortune);
+        game.context.move = 1;
+    } else {
+        // Generic food: show eating message, consume a turn
+        const name = desc.replace(/^\d+\s+/, '').replace(/^an?\s+/, '');
+        await pline(`You eat the ${name}.`);
+        game.context.move = 1;
+    }
+}
+
+// ── Throw ('t') ──
+
+// C ref: dothrow.c dothrow()
+async function doThrow() {
+    const disp = game?.nhDisplay;
+    const invent = game.u?.invent || [];
+    // Throwable: weapons and coins
+    const throwable = invent.filter(i =>
+        i.category === 'Weapons' || i.category === 'Coins'
+    );
+    if (!throwable.length) {
+        await pline("You have nothing to throw.");
+        game.context.move = 0;
+        return;
+    }
+
+    const letters = throwable.map(i => i.letter).sort().join('');
+    const prompt = `What do you want to throw? [${letters} or ?*] `;
+    game._pending_message = prompt;
+    await flush_screen(1);
+    if (disp) disp.setCursor(prompt.length, 0);
+
+    const rawKey = await nhgetch();
+    if (rawKey === 27) { game.context.move = 0; return; }
+
+    // Direction prompt
+    const dirPrompt = 'In what direction? ';
+    game._pending_message = dirPrompt;
+    await flush_screen(1);
+    if (disp) disp.setCursor(dirPrompt.length, 0);
+
+    const dirKey = await nhgetch();
+    if (dirKey === 27) { game.context.move = 0; return; }
+
+    // Throwing takes a turn; delegate RNG to fastforward for now
+    game.context.move = 1;
+}
+
 // C ref: cmd.c rhack — main command dispatcher
 export async function rhack(key) {
     if (key === 0) {
@@ -222,6 +493,12 @@ export async function rhack(key) {
         game.context.move = 1;
     } else if (ch === 'i') {
         await doInventory();
+    } else if (ch === 'e') {
+        await doEat();
+    } else if (ch === 't') {
+        await doThrow();
+    } else if (ch === '#') {
+        await doExtendedCmd();
     } else if (ch === 's') {
         // Search for traps/secret doors: takes a turn, no per-step messages
         game.context.move = 1;
