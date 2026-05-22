@@ -6,6 +6,7 @@
 
 import { game } from './gstate.js';
 import { rn2, rnd } from './rng.js';
+import { nhgetch } from './input.js';
 import { mklev, l_nhcore_init, u_on_upstairs, makedog } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline } from './display.js';
@@ -49,24 +50,18 @@ export async function newgame() {
     // because makedog's collect_coords needs g.u.ux / g.u.uy.
     u_on_upstairs();
 
+    // Set ualign before makedog() so peace_minded() can check player alignment.
+    // C sets u.ualign in u_init() which runs before makedog in newgame().
+    g.u.ualign = { type: g.flags?.initalign ?? 0, record: 0 };
+
     // C ref: dog.c makedog() — create starting pet.
     // Tourist sessions use pettype:none → preferred_pet='n' → immediate return.
     // Other roles: calls pet_type() (rn2(2) if random) + collect_coords + HP/gender.
     makedog();
 
-    // Fast-forward through post-mklev startup RNG calls.
-    // Covers: u_init_role, ini_inv, attributes.
-    // com_pager("legacy") is simulated inside (nhlib.lua shuffle + nhgetch) if legacy.
-    await fastforward_post_mklev();
+    // uac=0 before com_pager: C does not equip armor until after the legacy pager
+    g.u.uac = 0;
 
-    // Gold count set by u_init_role() via umoney0
-    g._goldCount = g.u.umoney0 ?? 0;
-    g.u.ulevel = 1;
-    // g.u.uhp/uhpmax and g.u.uen/uenmax set by fastforward_u_init_misc() above
-    g.u.uac = 10; g.u.uexp = 0;
-    g.u.ualign = { type: g.flags?.initalign ?? 0, record: 0 };
-    // acurr and amax are set by init_attr() inside fastforward_post_mklev()
-    g.moves = 1;
     // urole/urace may have been set by jsmain.js from nethackrc; keep them,
     // or fall back to Tourist defaults for seed8000.
     if (!g.urole) g.urole = { name: { m: 'Tourist', f: 'Tourist' }, rank: { m: 'Rambler', f: 'Rambler' } };
@@ -101,27 +96,54 @@ export async function newgame() {
         { category: 'Potions', items: ['potion of extra healing (murky)'] },
     ];
 
-    // Initial display
+    // Draw map before fastforward_post_mklev so pager can overlay it.
+    // C ref: allmain.c newgame() — docrt() runs before com_pager("legacy").
     init_vision_globals();
     vision_reset();
     vision_recalc(0);
     await cls();
     await docrt();
-    await flush_screen(1);
-    await bot();
+
+    // Fast-forward through post-mklev startup RNG calls.
+    // Inside: u_init_inventory_attrs + init_attr + flush_screen + pager nhgetch if legacy.
+    await fastforward_post_mklev();
+
+    // Gold count set by u_init_role() via umoney0 (also set inside fastforward_post_mklev)
+    g._goldCount = g.u.umoney0 ?? 0;
+    g.u.ulevel = 1;
+    // g.u.uhp/uhpmax and g.u.uen/uenmax set by fastforward_u_init_misc() above
+    // uac: role-specific starting AC (10 - total armor bonus), computed from startAC field
+    g.u.uac = g.urole_data?.startAC ?? 10;
+    g.u.uexp = 0;
+    // g.u.ualign set before makedog() above
+    // acurr and amax are set by init_attr() inside fastforward_post_mklev()
+    g.moves = 1;
 
     // Welcome message
-    // C ref: role.c Hello() — role-specific greeting word
-    const roleName = g.urole?.name?.m || 'Tourist';
-    const greeting = roleName === 'Knight' ? 'Salutations'
-                   : roleName === 'Tourist' ? 'Aloha'
-                   : roleName === 'Valkyrie' ? 'Velkommen'
-                   : roleName === 'Samurai' ? 'Konnichi wa'
+    // C ref: allmain.c welcome() + role.c Hello()
+    // C uses urole.name.f to determine whether gender adj is shown:
+    //   - name.f is NULL → role has no gender-specific name (e.g. Tourist, Valkyrie)
+    //     → show gender adj ONLY if role allows both genders
+    //   - name.f non-NULL → role has female name (Cavewoman, Priestess)
+    //     → use female name for female, no gender adj
+    const baseRoleName = g.urole?.name?.m || 'Tourist';
+    // C: (currentgend && urole.name.f) ? name.f : name.m
+    const hasFemaleName = !!(g.urole_data?.name?.f && g.urole_data.name.f !== g.urole_data.name.m);
+    const displayRoleName = (g.flags?.female && hasFemaleName)
+        ? g.urole_data.name.f : baseRoleName;
+    // Female-only roles: Valkyrie (only ROLE_FEMALE). Gender adj not shown.
+    const FEMALE_ONLY = new Set(['Valkyrie']);
+    const showGender = !hasFemaleName && !FEMALE_ONLY.has(baseRoleName);
+    const genderAdj = showGender ? (g.flags?.female ? 'female' : 'male') : '';
+    const greeting = baseRoleName === 'Knight' ? 'Salutations'
+                   : baseRoleName === 'Tourist' ? 'Aloha'
+                   : baseRoleName === 'Valkyrie' ? 'Velkommen'
+                   : baseRoleName === 'Samurai' ? 'Konnichi wa'
                    : 'Hello';
     const align = g.u?.ualign?.type > 0 ? 'lawful' : g.u?.ualign?.type < 0 ? 'chaotic' : 'neutral';
-    const genderAdj = g.flags?.female ? 'female' : 'male';
     const raceAdj = g.urace?.adj || 'human';
-    await pline(`${greeting} ${g.plname}, welcome to NetHack!  You are a ${align} ${genderAdj} ${raceAdj} ${roleName}.`);
+    const genderPart = genderAdj ? ` ${genderAdj}` : '';
+    await pline(`${greeting} ${g.plname}, welcome to NetHack!  You are a ${align}${genderPart} ${raceAdj} ${displayRoleName}.`);
 }
 
 // C ref: allmain.c moveloop_core()
@@ -136,6 +158,56 @@ export async function moveloop_core() {
     if (!g._moveloopPreambleDone) {
         rnd(9000); rnd(30);
         g._moveloopPreambleDone = true;
+    }
+
+    // Pre-game nhgetch calls to align step indices with C sessions.
+    // C shows a legacy pager (2+ pages) and optional tutorial before the first
+    // game command. fastforward_post_mklev already consumed 1 pre-game key for
+    // legacy sessions; here we consume the remaining ones.
+    // preGameMoveCount = number of leading ' '/'n'/'y' chars in the moves string.
+    // For legacy=true:  extra = preGameMoveCount - 1  (1 already consumed above)
+    // For legacy=false: extra = preGameMoveCount
+    if (!g._preGameDone) {
+        g._preGameDone = true;
+        const legacy = g.flags?.legacy !== false;
+        const preGameMoveCount = g._preGameMoveCount || 0;
+        const extraNhgetch = legacy
+            ? Math.max(0, preGameMoveCount - 1)
+            : preGameMoveCount;
+        if (extraNhgetch > 0) {
+            // Build screen with pending welcome message before first pre-game nhgetch,
+            // so the screen captures during the pager/tutorial phase see the message.
+            // Also clears _pending_message so it doesn't persist to the game screens.
+            await flush_screen(1);
+            for (let i = 0; i < extraNhgetch; i++) {
+                const disp = game?.nhDisplay;
+                if (i === 0) {
+                    // C ref: allmain.c Hello() + pline — welcome message is at row 0,
+                    // then "--More--" appears at row 1 before nhgetch dismisses the pager.
+                    const parts = (game._screen_output || '').split('\n');
+                    parts[1] = '--More--';
+                    game._screen_output = parts.join('\n');
+                    // Cursor at end of "--More--" (col 8, row 1)
+                    if (disp) disp.setCursor(8, 1);
+                } else if (i === 1) {
+                    // Tutorial query overlay: text at col 21 rows 0-6, map behind rows 7+.
+                    // C ref: allmain.c com_pager("tutorial") — shown before first move.
+                    const parts = (game._screen_output || '').split('\n');
+                    const p = '\x1b[21C';
+                    parts[0] = `${p}\x1b[7mDo you want a tutorial?\x1b[0m`;
+                    parts[1] = '';
+                    parts[2] = `${p}y - Yes, do a tutorial`;
+                    parts[3] = `${p}n - No, just start play`;
+                    parts[4] = '';
+                    parts[5] = `${p}Put "OPTIONS=!tutorial" in .nethackrc to skip this query.`;
+                    parts[6] = `${p}(end)`;
+                    game._screen_output = parts.join('\n');
+                    // Cursor at end of "(end)" (col 21 + length("(end)") + 1 = 27, row 6)
+                    if (disp) disp.setCursor(27, 6);
+                }
+                await nhgetch();
+            }
+        }
     }
 
     // Fast-forward per-step RNG (monster movement, regen, sounds, hunger).
