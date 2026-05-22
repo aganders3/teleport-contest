@@ -548,4 +548,40 @@ async function domove(dx, dy) {
     newsym(oldx, oldy);
     vision_recalc(1);
     newsym(newx, newy);
+
+    // Move pets one step toward player (simplified dog-following AI).
+    // C ref: dogmove.c dog_move() — pet follows the hero after each turn.
+    movePets();
+}
+
+// C ref: dogmove.c dog_move() — simplified: move each pet one step toward hero.
+// Tries primary diagonal, then cardinal directions, skips player's cell and walls.
+function movePets() {
+    const g = game;
+    const monsters = g.level?.monsters;
+    if (!monsters?.length) return;
+    const ux = g.u.ux, uy = g.u.uy;
+
+    for (const mon of monsters) {
+        if (!mon._pet) continue;
+        const pdx = Math.sign(ux - mon.mx);
+        const pdy = Math.sign(uy - mon.my);
+
+        // Try: diagonal, dy-only, dx-only (skip player's cell and walls)
+        const candidates = [[pdx, pdy], [0, pdy], [pdx, 0]];
+        let moved = false;
+        for (const [cdx, cdy] of candidates) {
+            if (cdx === 0 && cdy === 0) continue;
+            const nx = mon.mx + cdx, ny = mon.my + cdy;
+            if (nx === ux && ny === uy) continue;  // don't step on player
+            if (blocksMove(nx, ny)) continue;
+            // Update position first so newsym on old pos sees no monster there
+            const oldmx = mon.mx, oldmy = mon.my;
+            mon.mx = nx; mon.my = ny;
+            newsym(oldmx, oldmy);   // redraws old cell as floor/terrain
+            newsym(mon.mx, mon.my); // draws pet at new cell
+            moved = true;
+            break;
+        }
+    }
 }
