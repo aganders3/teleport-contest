@@ -745,11 +745,21 @@ function otyp_to_class(otyp) {
 }
 
 function mksobj_at(otyp, x, y, init, artif) {
-    return mksobj(otyp, init, artif);
+    const obj = mksobj(otyp, init, artif);
+    if (game.level && x > 0 && y >= 0 && x < COLNO && y < ROWNO) {
+        if (!game.level.floor_items) game.level.floor_items = new Map();
+        game.level.floor_items.set(`${x},${y}`, obj);
+    }
+    return obj;
 }
 
 function mkobj_at(oclass, x, y, artif) {
-    return mkobj(oclass, artif);
+    const obj = mkobj(oclass, artif);
+    if (game.level && x > 0 && y >= 0 && x < COLNO && y < ROWNO) {
+        if (!game.level.floor_items) game.level.floor_items = new Map();
+        game.level.floor_items.set(`${x},${y}`, obj);
+    }
+    return obj;
 }
 
 // Monster indices with MZ_TINY size (verysmall() returns true for these)
@@ -1853,25 +1863,25 @@ function dosdoor(x, y, aroom, type) {
     loc.typ = type;
     if (type === DOOR) {
         if (!rn2(3)) {
-            if (!rn2(5)) loc.flags = D_ISOPEN;
-            else if (!rn2(6)) loc.flags = D_LOCKED;
-            else loc.flags = D_CLOSED;
-            if (loc.flags !== D_ISOPEN && !shdoor
+            if (!rn2(5)) loc.doormask = D_ISOPEN;
+            else if (!rn2(6)) loc.doormask = D_LOCKED;
+            else loc.doormask = D_CLOSED;
+            if (loc.doormask !== D_ISOPEN && !shdoor
                 && level_difficulty() >= 5 && !rn2(25))
-                loc.flags |= D_TRAPPED;
+                loc.doormask |= D_TRAPPED;
         } else {
-            loc.flags = shdoor ? D_ISOPEN : D_NODOOR;
+            loc.doormask = shdoor ? D_ISOPEN : D_NODOOR;
         }
-        if (loc.flags & D_TRAPPED) {
+        if (loc.doormask & D_TRAPPED) {
             if (level_difficulty() >= 9 && !rn2(5)) {
-                loc.flags = D_NODOOR;
+                loc.doormask = D_NODOOR;
             }
         }
     } else {
-        if (shdoor || !rn2(5)) loc.flags = D_LOCKED;
-        else loc.flags = D_CLOSED;
+        if (shdoor || !rn2(5)) loc.doormask = D_LOCKED;
+        else loc.doormask = D_CLOSED;
         if (!shdoor && level_difficulty() >= 4 && !rn2(20))
-            loc.flags |= D_TRAPPED;
+            loc.doormask |= D_TRAPPED;
     }
     add_door(x, y, aroom);
 }
@@ -2766,12 +2776,11 @@ function level_finalize_topology() {
     }
 }
 
-// C ref: teleport.c collect_coords() — generate RNG from ring shuffles
+// C ref: teleport.c collect_coords() — generate RNG from ring shuffles and pick position.
 // CC_NO_FLAGS: scramble=true, ring_pairs=false, passend=true per ring.
-// For each radius 1..maxradius, count border cells within map bounds, then
-// Fisher-Yates shuffle calls: rn2(n), rn2(n-1), ..., rn2(2).
+// For each radius 1..maxradius, collect ring border cells, Fisher-Yates shuffle
+// them using rn2 calls, and return the first valid placement position.
 function collect_coords_rng(cx, cy, maxradius) {
-    // expand maxradius to map bounds if 0
     if (maxradius === 0) {
         const rowrange = cy < ROWNO / 2 ? ROWNO - 1 - cy : cy;
         const colrange = cx < COLNO / 2 ? COLNO - 1 - cx : cx;
@@ -2787,9 +2796,52 @@ function collect_coords_rng(cx, cy, maxradius) {
                 n++;
             }
         }
-        // Fisher-Yates shuffle: rn2(n)...rn2(2)
         while (n > 1) { rn2(n); n--; }
     }
+}
+
+// Like collect_coords_rng but also returns the first valid placement position.
+// Consumes identical RNG as collect_coords_rng while tracking shuffled order.
+function enexto_pick(cx, cy, maxradius) {
+    if (maxradius === 0) {
+        const rowrange = cy < ROWNO / 2 ? ROWNO - 1 - cy : cy;
+        const colrange = cx < COLNO / 2 ? COLNO - 1 - cx : cx;
+        maxradius = Math.max(rowrange, colrange);
+    }
+    const allPositions = [];
+    for (let r = 1; r <= maxradius; r++) {
+        const lox = cx - r, hix = cx + r;
+        const loy = cy - r, hiy = cy + r;
+        const ring = [];
+        for (let y = Math.max(loy, 0); y <= hiy && y < ROWNO; y++) {
+            for (let x = Math.max(lox, 1); x <= hix && x < COLNO; x++) {
+                if (x !== lox && x !== hix && y !== loy && y !== hiy) continue;
+                ring.push({ x, y });
+            }
+        }
+        // C's front-to-back shuffle (teleport.c:697): picks rn2(n..2), swaps
+        // front element with random element, then advances front pointer.
+        // Produces different permutations than standard back-to-front Fisher-Yates
+        // even though both call rn2(n), rn2(n-1), ..., rn2(2).
+        for (let i = 0; i < ring.length - 1; i++) {
+            const k = rn2(ring.length - i);
+            if (k) {
+                const tmp = ring[i]; ring[i] = ring[i + k]; ring[i + k] = tmp;
+            }
+        }
+        for (const pos of ring) allPositions.push(pos);
+    }
+    // Pick first valid position: walkable terrain, not hero, not occupied
+    for (const pos of allPositions) {
+        const loc = game.level?.at(pos.x, pos.y);
+        if (!loc) continue;
+        if (loc.typ !== ROOM && loc.typ !== CORR &&
+            !(loc.typ === DOOR && (loc.doormask & D_ISOPEN))) continue;
+        if (pos.x === cx && pos.y === cy) continue;
+        if (game.level.monsters?.some(m => m.mx === pos.x && m.my === pos.y)) continue;
+        return pos;
+    }
+    return null;
 }
 
 // C ref: makemon.c adj_lev() — adjust monster level for dungeon depth/player level
@@ -2836,15 +2888,13 @@ export function makedog() {
         else petKind = rn2(2) ? 'cat' : 'dog'; // rn2(2): 0=dog, 1=cat
     }
 
-    // enexto_core: collect_coords with maxradius=3 first (covers within 3 steps)
-    // For most starting positions in a dungeon room, this finds a valid spot.
+    // enexto_core: collect_coords with maxradius=3 — shuffles all 3 rings then picks
+    // the first valid position. Identical RNG to old collect_coords_rng(ux,uy,3).
     const ux = g.u?.ux ?? 1, uy = g.u?.uy ?? 1;
-    collect_coords_rng(ux, uy, 3);
-    // Note: if no valid position found within radius 3, a second call with
-    // maxradius=0 would follow. In practice the starting room always has room.
+    const petPos = enexto_pick(ux, uy, 3);
 
     // next_ident() for pet's m_id
-    next_ident();
+    const m_id = next_ident();
 
     // newmonhp: d(adj_lev(mlevel), 8), or rnd(4) if adj_lev=0
     const mlevel = PET_MLEVEL[petKind] ?? 2;
@@ -2858,8 +2908,34 @@ export function makedog() {
     }
 
     // gender check: rn2(2) unless monster is sex-locked
-    // KITTEN and LITTLE_DOG are both-sex-ok; PONY is neuter? Let me check:
-    // PONY M2 flags: M2_DOMESTIC — not M2_MALE or M2_FEMALE, not neuter
-    // So all three pets: femaleok=true, maleok=true → rn2(2)
     rn2(2);
+
+    // peace_minded() called inside makemon() at line 1299 for all monsters.
+    // Cat/dog/pony have maligntyp=A_NEUTRAL=0.
+    // If player alignment != monster alignment (sgn mismatch), returns FALSE early (no rn2).
+    // Otherwise: rn2(16+record); if non-zero, rn2(2+abs(mal)).
+    const petMaligntyp = 0; // A_NEUTRAL for all pets (cat/dog/pony)
+    const ual = g.u?.ualign?.type ?? 0;
+    const sgnPet = petMaligntyp > 0 ? 1 : petMaligntyp < 0 ? -1 : 0;
+    const sgnUal = ual > 0 ? 1 : ual < 0 ? -1 : 0;
+    if (sgnPet === sgnUal) {
+        const record = g.u?.ualign?.record ?? 0;
+        const adjRecord = record < -15 ? -15 : record;
+        const first = rn2(16 + adjRecord);
+        if (first !== 0) {
+            rn2(2 + Math.abs(petMaligntyp));
+        }
+    }
+
+    // Store pet in level monster list for rendering
+    if (petPos && g.level) {
+        const petChars = { cat: 'f', dog: 'd', pony: 'u' };
+        const mtmp = {
+            mx: petPos.x, my: petPos.y, m_id,
+            _petChar: petChars[petKind] || 'd',
+            _petKind: petKind, _pet: true,
+        };
+        if (!g.level.monsters) g.level.monsters = [];
+        g.level.monsters.push(mtmp);
+    }
 }

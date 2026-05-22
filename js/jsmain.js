@@ -90,6 +90,7 @@ export class NethackGame {
         const opts = parseNethackrc(this._nethackrc);
         g.flags = { verbose: true, legacy: true, ...opts.flags };
         // C ref: options.c set_playmode() — debug/wizard mode forces plname="wizard"
+        // C's nmcpy in options.c copies name as-is (no capitalization for OPTIONS= names)
         g.plname = g.flags.debug ? 'wizard' : (opts.name || 'Hero');
         g.iflags = { ...opts.iflags };
         if (opts.preferred_pet) g.preferred_pet = opts.preferred_pet;
@@ -100,6 +101,7 @@ export class NethackGame {
         g.context = { move: 0 };
         g.program_state = {};
         g.moves = 1;
+        g._preGameMoveCount = this._preGameMoveCount || 0;
 
         // Map role/race/gender/align from options to role data tables
         const roleData = findRole(opts.role) || roles[10]; // default Tourist
@@ -113,6 +115,8 @@ export class NethackGame {
         g.flags.initrace = races.indexOf(raceData);
         // A_LAWFUL=1, A_NEUTRAL=0, A_CHAOTIC=-1 (C ref: align.h)
         g.flags.initalign = opts.align === 'lawful' ? 1 : opts.align === 'chaotic' ? -1 : 0;
+        // DEC line-drawing mode: only when symset:DECgraphics is set
+        g.flags.decgfx = (opts.symset === 'DECgraphics');
 
         // Initialize PRNG
         initRng(this._seed);
@@ -141,15 +145,14 @@ export class NethackGame {
             const slice = fullLog.slice(nhGame._lastRngIdx);
             nhGame._lastRngIdx = fullLog.length;
 
-            // Capture screen from the terminal grid. The fixture for
-            // screen scoring is the Terminal: contestants drive it
-            // however they like, judge reads back terminal.serialize()
-            // and compares to the C session's recorded screen.
-            const disp = game?.nhDisplay;
-            const term = disp?.terminal || disp;
-            nhGame._screens.push(term?.serialize ? term.serialize() : '');
+            // Capture screen. We use game._screen_output (built by flush_screen)
+            // which emits ANSI/VT100 escape sequences matching C's bot() output,
+            // including cursor-forward for title-to-stats gap in the status line.
+            // This matches the C-recorded session format exactly.
+            nhGame._screens.push(game._screen_output || '');
             nhGame._rngSlices.push(slice);
 
+            const disp = game?.nhDisplay;
             const cursor = disp ? [disp.cursorCol ?? 0, disp.cursorRow ?? 0, 1] : null;
             nhGame._cursors.push(cursor);
 
@@ -204,7 +207,18 @@ export async function runSegment(input) {
     const { seed, nethackrc, storage } = input;
     const moves = input.moves || '';
 
+    // Count leading pre-game keys (pager dismissal: ' '; tutorial: 'n'/'y').
+    // moveloop_core fires this many nhgetch calls before the first game command
+    // to align step indices with the C recording's pager/tutorial phase.
+    const PRE_GAME_CHARS = new Set([' ', 'n', 'y']);
+    let preGameCount = 0;
+    for (const ch of moves) {
+        if (PRE_GAME_CHARS.has(ch)) preGameCount++;
+        else break;
+    }
+
     const nhGame = new NethackGame({ seed, nethackrc, storage });
+    nhGame._preGameMoveCount = preGameCount;
 
     const display = new GameDisplay(null);
     display.onEmptyQueue = () => { throw new Error('Input queue empty - test may be missing keystrokes'); };

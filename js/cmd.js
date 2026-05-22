@@ -7,7 +7,7 @@
 
 import { game } from './gstate.js';
 import { nhgetch } from './input.js';
-import { newsym, flush_screen, pline, writeStatusToDisplay } from './display.js';
+import { newsym, flush_screen, pline, writeStatusToDisplay, buildOverlayScreenOutput } from './display.js';
 import { vision_recalc } from './vision.js';
 import { COLNO, ROWNO, STONE, DOOR, D_CLOSED, D_LOCKED,
          IS_WALL, IS_OBSTRUCTED } from './const.js';
@@ -64,6 +64,7 @@ async function showPager(lines, promptRow, promptText, startCol, keepStatus, cur
     }
     if (keepStatus) writeStatusToDisplay();
     if (cursorPos) display.setCursor(cursorPos[0], cursorPos[1]);
+    buildOverlayScreenOutput(lines, startCol, promptRow, promptText, keepStatus);
     await nhgetch();   // captures screen N (overlay), reads dismissal key
 }
 
@@ -184,16 +185,8 @@ async function doExtendedCharInfo() {
         `  Your constitution is ${con}.`,
         `  Your intelligence is ${int_}.`,
     ];
-    // " (1 of 2)" at row 23
-    const display = game?.nhDisplay;
-    if (!display) return;
-    display.clearScreen();
-    writeOverlayLines(display, page1, 0);
-    const p1prompt = ' (1 of 2)';
-    for (let c = 0; c < p1prompt.length; c++)
-        display.setCell(c, 23, p1prompt[c], NO_COLOR, 0);
-    display.setCursor(p1prompt.length, 23);  // cursor at col 9, row 23
-    await nhgetch();   // captures screen 17 (page 1), reads space
+    // Page 1: 23 lines (rows 0-22), prompt at row 23
+    await showPager(page1, 23, ' (1 of 2)', 0, false, [9, 23]);
 
     // Page 2
     const page2 = [
@@ -209,13 +202,8 @@ async function doExtendedCharInfo() {
         ' Miscellaneous:',
         '  Total elapsed playing time is none.',
     ];
-    display.clearScreen();
-    writeOverlayLines(display, page2, 0);
-    const p2prompt = ' (2 of 2)';
-    for (let c = 0; c < p2prompt.length; c++)
-        display.setCell(c, page2.length, p2prompt[c], NO_COLOR, 0);
-    display.setCursor(p2prompt.length, page2.length);  // cursor at col 9, row 11
-    await nhgetch();   // captures screen 18 (page 2), reads space
+    // prompt at row page2.length (11)
+    await showPager(page2, page2.length, ' (2 of 2)', 0, false, [9, page2.length]);
 
     game.context.move = 0;
 }
