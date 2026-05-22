@@ -8,8 +8,9 @@ import {
     HWALL, VWALL, TLCORNER, TRCORNER, BLCORNER, BRCORNER,
     CROSSWALL, TUWALL, TDWALL, TLWALL, TRWALL,
     D_NODOOR, D_ISOPEN, D_CLOSED, D_LOCKED,
+    SDOOR, SCORR,
 } from './const.js';
-import { NO_COLOR, CLR_GRAY, CLR_BROWN, CLR_WHITE, CLR_YELLOW, DEC_TO_UNICODE } from './terminal.js';
+import { NO_COLOR, CLR_GRAY, CLR_BROWN, CLR_WHITE, CLR_YELLOW, CLR_MAGENTA, CLR_CYAN, CLR_ORANGE, DEC_TO_UNICODE } from './terminal.js';
 
 // ── ANSI color codes ──
 // Maps CLR_* constants (0-15) to ANSI SGR color codes.
@@ -37,32 +38,82 @@ const ANSI_COLOR = [
 // ── Terrain to display character + color + DEC flag ──
 function terrain_glyph(loc, x, y) {
     const typ = loc.typ;
+    const dec = !!game.flags?.decgfx;
     switch (typ) {
     case STONE:     return { ch: ' ', color: NO_COLOR, dec: false };
-    case ROOM:      return { ch: '~', color: NO_COLOR, dec: true };  // DEC middle dot
+    case ROOM:      return dec ? { ch: '~', color: NO_COLOR, dec: true }
+                               : { ch: '.', color: NO_COLOR, dec: false };
     case CORR:      return { ch: '#', color: NO_COLOR, dec: false };
     case DOOR:
         if (loc.doormask & D_ISOPEN) return { ch: '|', color: CLR_BROWN, dec: false };
         if (loc.doormask & (D_CLOSED | D_LOCKED)) return { ch: '+', color: CLR_BROWN, dec: false };
-        return { ch: '~', color: NO_COLOR, dec: true };  // D_NODOOR = floor
+        return dec ? { ch: '~', color: NO_COLOR, dec: true }
+                   : { ch: '.', color: NO_COLOR, dec: false };
     case STAIRS:
-        // Check upstair vs downstair
         if (game.level?.upstair?.x === x && game.level?.upstair?.y === y)
             return { ch: '<', color: CLR_YELLOW, dec: false };
         return { ch: '>', color: CLR_YELLOW, dec: false };
-    // Wall types → DEC line-drawing characters
-    case HWALL:     return { ch: 'q', color: NO_COLOR, dec: true };  // ─
-    case VWALL:     return { ch: 'x', color: NO_COLOR, dec: true };  // │
-    case TLCORNER:  return { ch: 'l', color: NO_COLOR, dec: true };  // ┌
-    case TRCORNER:  return { ch: 'k', color: NO_COLOR, dec: true };  // ┐
-    case BLCORNER:  return { ch: 'm', color: NO_COLOR, dec: true };  // └
-    case BRCORNER:  return { ch: 'j', color: NO_COLOR, dec: true };  // ┘
-    case CROSSWALL: return { ch: 'n', color: NO_COLOR, dec: true };  // ┼
-    case TUWALL:    return { ch: 'v', color: NO_COLOR, dec: true };  // ┴
-    case TDWALL:    return { ch: 'w', color: NO_COLOR, dec: true };  // ┬
-    case TLWALL:    return { ch: 'u', color: NO_COLOR, dec: true };  // ┤
-    case TRWALL:    return { ch: 't', color: NO_COLOR, dec: true };  // ├
+    // Wall types
+    case HWALL:     return dec ? { ch: 'q', color: NO_COLOR, dec: true }
+                               : { ch: '-', color: NO_COLOR, dec: false };
+    case VWALL:     return dec ? { ch: 'x', color: NO_COLOR, dec: true }
+                               : { ch: '|', color: NO_COLOR, dec: false };
+    case TLCORNER:  return dec ? { ch: 'l', color: NO_COLOR, dec: true }
+                               : { ch: '-', color: NO_COLOR, dec: false };
+    case TRCORNER:  return dec ? { ch: 'k', color: NO_COLOR, dec: true }
+                               : { ch: '-', color: NO_COLOR, dec: false };
+    case BLCORNER:  return dec ? { ch: 'm', color: NO_COLOR, dec: true }
+                               : { ch: '-', color: NO_COLOR, dec: false };
+    case BRCORNER:  return dec ? { ch: 'j', color: NO_COLOR, dec: true }
+                               : { ch: '-', color: NO_COLOR, dec: false };
+    case CROSSWALL: return dec ? { ch: 'n', color: NO_COLOR, dec: true }
+                               : { ch: '+', color: NO_COLOR, dec: false };
+    case TUWALL:    return dec ? { ch: 'v', color: NO_COLOR, dec: true }
+                               : { ch: '-', color: NO_COLOR, dec: false };
+    case TDWALL:    return dec ? { ch: 'w', color: NO_COLOR, dec: true }
+                               : { ch: '-', color: NO_COLOR, dec: false };
+    case TLWALL:    return dec ? { ch: 'u', color: NO_COLOR, dec: true }
+                               : { ch: '|', color: NO_COLOR, dec: false };
+    case TRWALL:    return dec ? { ch: 't', color: NO_COLOR, dec: true }
+                               : { ch: '|', color: NO_COLOR, dec: false };
+    case SDOOR: {
+        // SDOOR disguises as the appropriate wall type based on neighbors
+        const neighbors = [game.level?.at(x-1,y), game.level?.at(x+1,y)];
+        const horizNeighbor = neighbors.some(l => l && (l.typ === HWALL || l.typ === TLCORNER || l.typ === TRCORNER || l.typ === BLCORNER || l.typ === BRCORNER || l.typ === TUWALL || l.typ === TDWALL));
+        if (horizNeighbor)
+            return dec ? { ch: 'q', color: NO_COLOR, dec: true } : { ch: '-', color: NO_COLOR, dec: false };
+        return dec ? { ch: 'x', color: NO_COLOR, dec: true } : { ch: '|', color: NO_COLOR, dec: false };
+    }
+    case SCORR:     return { ch: '#', color: NO_COLOR, dec: false };
     default:        return { ch: '?', color: NO_COLOR, dec: false };
+    }
+}
+
+// ── Object class → display glyph ──
+// oclass constants (must match mklev.js WEAPON_CLASS etc.)
+const _WEAPON_CLASS = 2, _ARMOR_CLASS = 3, _RING_CLASS = 4, _AMULET_CLASS = 5;
+const _TOOL_CLASS = 6, _FOOD_CLASS = 7, _POTION_CLASS = 8, _SCROLL_CLASS = 9;
+const _SPBOOK_CLASS = 10, _WAND_CLASS = 11, _COIN_CLASS = 12, _GEM_CLASS = 13;
+const _ROCK_CLASS = 14, _BALL_CLASS = 15, _CHAIN_CLASS = 16;
+
+function obj_glyph(obj) {
+    switch (obj.oclass) {
+    case _WEAPON_CLASS: return { ch: '(', color: CLR_WHITE };
+    case _ARMOR_CLASS:  return { ch: '[', color: CLR_GRAY };
+    case _TOOL_CLASS:   return { ch: '(', color: CLR_BROWN };
+    case _FOOD_CLASS:   return { ch: '%', color: CLR_BROWN };
+    case _POTION_CLASS: return { ch: '!', color: CLR_MAGENTA };
+    case _SCROLL_CLASS: return { ch: '?', color: CLR_WHITE };
+    case _SPBOOK_CLASS: return { ch: '+', color: CLR_CYAN };
+    case _RING_CLASS:   return { ch: '=', color: CLR_YELLOW };
+    case _AMULET_CLASS: return { ch: '"', color: CLR_YELLOW };
+    case _WAND_CLASS:   return { ch: '/', color: CLR_ORANGE };
+    case _COIN_CLASS:   return { ch: '$', color: CLR_YELLOW };
+    case _GEM_CLASS:    return { ch: '*', color: CLR_WHITE };
+    case _ROCK_CLASS:   return { ch: '`', color: CLR_GRAY };
+    case _BALL_CLASS:   return { ch: '0', color: CLR_WHITE };
+    case _CHAIN_CLASS:  return { ch: '_', color: CLR_GRAY };
+    default:            return { ch: '~', color: NO_COLOR };
     }
 }
 
@@ -90,17 +141,43 @@ export function newsym(x, y) {
         return;
     }
 
-    // Contestants: add monster, object, and trap display here.
+    // Monster at this cell
+    const mon = game.level.monsters?.find(m => m.mx === x && m.my === y);
+    if (mon && cansee(x, y)) {
+        const mch = mon._petChar || 'd';
+        const mcol = CLR_WHITE;
+        show_glyph_cell(x, y, mch, mcol, false);
+        const tg = terrain_glyph(loc, x, y);
+        loc.remembered_glyph = { ch: tg.ch, color: tg.color, decgfx: tg.dec };
+        return;
+    }
+
+    // Floor item at this cell (items from level generation)
+    const flItem = game.level.floor_items?.get(`${x},${y}`);
+    if (flItem && cansee(x, y)) {
+        const og = obj_glyph(flItem);
+        show_glyph_cell(x, y, og.ch, og.color, false);
+        const tg = terrain_glyph(loc, x, y);
+        loc.remembered_glyph = { ch: tg.ch, color: tg.color, decgfx: tg.dec };
+        return;
+    }
+
+    // Gold at this cell
+    const goldAmt = game.level._gold_cells?.get(`${x},${y}`);
+    if (goldAmt && cansee(x, y)) {
+        show_glyph_cell(x, y, '$', CLR_YELLOW, false);
+        const tg = terrain_glyph(loc, x, y);
+        loc.remembered_glyph = { ch: tg.ch, color: tg.color, decgfx: tg.dec };
+        return;
+    }
 
     const tg = terrain_glyph(loc, x, y);
-    // Only update display/memory if cell is IN_SIGHT (lit and visible)
     if (cansee(x, y)) {
         show_glyph_cell(x, y, tg.ch, tg.color, tg.dec);
         if (game.level?.flags?.hero_memory) {
             loc.remembered_glyph = { ch: tg.ch, color: tg.color, decgfx: tg.dec };
         }
     } else if (loc.remembered_glyph) {
-        // Out of sight but remembered — show remembered glyph
         show_glyph_cell(x, y, loc.remembered_glyph.ch,
             loc.remembered_glyph.color, loc.remembered_glyph.decgfx);
     }
@@ -110,14 +187,8 @@ export function newsym(x, y) {
 export async function docrt() {
     if (!game.level) return;
     for (let y = 0; y < ROWNO; y++)
-        for (let x = 1; x < COLNO; x++) {
-            const loc = game.level.at(x, y);
-            if (loc?.remembered_glyph) {
-                show_glyph_cell(x, y, loc.remembered_glyph.ch,
-                    loc.remembered_glyph.color, loc.remembered_glyph.decgfx);
-            }
-        }
-    if (game.u?.ux > 0) show_glyph_cell(game.u.ux, game.u.uy, '@', CLR_WHITE, false);
+        for (let x = 1; x < COLNO; x++)
+            newsym(x, y);
 }
 
 // ── Serialize a map row with DEC line-drawing and ANSI colors ──
@@ -183,7 +254,9 @@ function render_map_row(y) {
 function _statusLine1() {
     const u = game.u;
     if (!u) return '';
-    const name = game.plname || 'Hero';
+    const rawName = game.plname || 'Hero';
+    // C ref: botl.c — nb[0] = highc(nb[0]); capitalizes first letter for status line
+    const name = rawName.length > 0 ? rawName[0].toUpperCase() + rawName.slice(1) : rawName;
     const role = game.urole?.rank?.m || game.urole?.name?.m || 'Adventurer';
     const title = `${name} the ${role}`;
     // C internal order: A_STR=0 A_INT=1 A_WIS=2 A_DEX=3 A_CON=4 A_CHA=5
@@ -204,7 +277,13 @@ function _statusLine1() {
 function _statusLine2() {
     const u = game.u;
     if (!u) return '';
-    return `Dlvl:${u.uz?.dlevel || 1} $:${game._goldCount || 0} HP:${u.uhp || 0}(${u.uhpmax || 0}) Pw:${u.uen || 0}(${u.uenmax || 0}) AC:${u.uac ?? 10} Xp:${u.ulevel || 1}/${u.uexp || 0} T:${game.moves || 1}`;
+    let s = `Dlvl:${u.uz?.dlevel || 1} $:${game._goldCount || 0} HP:${u.uhp || 0}(${u.uhpmax || 0}) Pw:${u.uen || 0}(${u.uenmax || 0}) AC:${u.uac ?? 10}`;
+    if (game.flags?.showexp)
+        s += ` Xp:${u.ulevel || 1}/${u.uexp || 0}`;
+    else
+        s += ` Xp:${u.ulevel || 1}`;
+    if (game.flags?.time) s += ` T:${game.moves || 1}`;
+    return s;
 }
 
 // ── Serialize terminal grid for screen comparison ──
@@ -313,6 +392,99 @@ export function writeStatusToDisplay() {
     const s2 = _statusLine2();
     for (let c = 0; c < Math.min(s2.length, display.cols); c++)
         display.setCell(c, 23, s2[c], NO_COLOR, 0);
+}
+
+// ── buildOverlayScreenOutput ──
+// Build game._screen_output for overlay screens (inventory, pagers, etc).
+// Lines with {text, attr} get inverse-video when attr&1; plain strings are normal.
+// promptText (if truthy) is placed at promptRow instead of any overlay line.
+// keepStatus: include status lines at rows 22-23.
+export function buildOverlayScreenOutput(lines, startCol, promptRow, promptText, keepStatus) {
+    const parts = [];
+    for (let row = 0; row < 24; row++) {
+        let lineStr = '';
+        if (keepStatus && row === 22) {
+            lineStr = _statusLine1();
+        } else if (keepStatus && row === 23) {
+            lineStr = _statusLine2();
+        } else if (promptText && row === promptRow) {
+            lineStr = promptText;
+        } else if (row < lines.length) {
+            const entry = lines[row];
+            const text = typeof entry === 'string' ? entry : (entry?.text || '');
+            const isInverse = typeof entry !== 'string' && !!(entry?.attr & 1);
+            lineStr = startCol > 0 ? `\x1b[${startCol}C` : '';
+            if (isInverse) lineStr += `\x1b[7m${text}\x1b[0m`;
+            else lineStr += text;
+        }
+        parts.push(lineStr);
+    }
+    game._screen_output = parts.slice(0, 23).join('\n') + '\n' + parts[23];
+}
+
+// ── buildLegacyPagerScreen ──
+// Build game._screen_output for the com_pager("legacy") screen.
+// pagerLines: 18 strings (rows 0-17; row 17 = "--More--").
+// textCol: terminal column where pager text starts.
+// Caller sets display cursor after this (textCol+8, 17).
+export function buildLegacyPagerScreen(pagerLines, textCol) {
+    const parts = [];
+
+    // Row 0: pager line 0, no map at message row
+    {
+        const line = pagerLines[0] || '';
+        let nsp = 0;
+        while (nsp < line.length && line[nsp] === ' ') nsp++;
+        const content = line.slice(nsp);
+        const col = textCol + nsp;
+        parts.push(content ? (col > 4 ? `\x1b[${col}C${content}` : ' '.repeat(col) + content) : '');
+    }
+
+    // Rows 1-17: map row y=(row-1) + pager line overlay
+    for (let row = 1; row <= 17; row++) {
+        const y = row - 1;
+        const pagerLine = pagerLines[row] || '';
+
+        // Last visible map col for this row (map x is 1-indexed; cursor after
+        // render_map_row lands at that x value in 0-indexed terminal col space)
+        let mapLastCol = -1;
+        if (game.level) {
+            for (let x = 1; x < COLNO; x++) {
+                const loc = game.level.at(x, y);
+                if (loc?.disp_ch && loc.disp_ch !== ' ') mapLastCol = x;
+            }
+        }
+
+        let nsp = 0;
+        while (nsp < pagerLine.length && pagerLine[nsp] === ' ') nsp++;
+        const content = pagerLine.slice(nsp);
+        const targetCol = textCol + nsp;
+
+        if (!content) {
+            parts.push(mapLastCol >= 0 ? render_map_row(y) : '');
+        } else if (mapLastCol < 0) {
+            parts.push(targetCol > 4 ? `\x1b[${targetCol}C${content}` : ' '.repeat(targetCol) + content);
+        } else {
+            const gap = targetCol - mapLastCol;
+            if (gap <= 0) {
+                parts.push(render_map_row(y));
+            } else {
+                const gapStr = gap > 4 ? `\x1b[${gap}C` : ' '.repeat(gap);
+                parts.push(render_map_row(y) + gapStr + content);
+            }
+        }
+    }
+
+    // Rows 18-21: map only
+    for (let row = 18; row <= 21; row++) {
+        parts.push(render_map_row(row - 1));
+    }
+
+    // Rows 22-23: status
+    parts.push(_statusLine1());
+    parts.push(_statusLine2());
+
+    game._screen_output = parts.slice(0, 23).join('\n') + '\n' + parts[23];
 }
 
 // ── pline ──
