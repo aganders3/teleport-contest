@@ -52,7 +52,9 @@ export async function newgame() {
 
     // Set ualign before makedog() so peace_minded() can check player alignment.
     // C sets u.ualign in u_init() which runs before makedog in newgame().
-    g.u.ualign = { type: g.flags?.initalign ?? 0, record: 0 };
+    // C ref: u_init.c — ualign.record starts at 20 for Monk, 10 for all other roles.
+    const isMonk = (g.urole_data?.name?.m === 'Monk');
+    g.u.ualign = { type: g.flags?.initalign ?? 0, record: isMonk ? 20 : 10 };
 
     // C ref: dog.c makedog() — create starting pet.
     // Tourist sessions use pettype:none → preferred_pet='n' → immediate return.
