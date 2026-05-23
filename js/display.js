@@ -11,6 +11,16 @@ import {
     SDOOR, SCORR,
 } from './const.js';
 import { NO_COLOR, CLR_GRAY, CLR_BROWN, CLR_WHITE, CLR_YELLOW, CLR_MAGENTA, CLR_CYAN, CLR_ORANGE, DEC_TO_UNICODE } from './terminal.js';
+import { MONS, MONS_COLOR } from './mondata.js';
+
+// MONSYM index → display character (from defsym.h MONSYM table)
+// Index 0 = unused, 1='a' (ant), 2='b' (blob), ..., 60=']' (mimic)
+const MONSYM_CHARS = [
+    ' ','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o',
+    'p','q','r','s','t','u','v','w','x','y','z',
+    'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+    '@',' ','\'','&',';',':','~',']',
+];
 
 // ── ANSI color codes ──
 // Maps CLR_* constants (0-15) to ANSI SGR color codes.
@@ -144,8 +154,9 @@ export function newsym(x, y) {
     // Monster at this cell
     const mon = game.level.monsters?.find(m => m.mx === x && m.my === y);
     if (mon && cansee(x, y)) {
-        const mch = mon._petChar || 'd';
-        const mcol = CLR_WHITE;
+        const sym_id = (mon._mndx != null) ? (MONS[mon._mndx]?.[4] ?? 0) : 0;
+        const mch = mon._petChar || MONSYM_CHARS[sym_id] || 'd';
+        const mcol = (mon._mndx != null) ? (MONS_COLOR[mon._mndx] ?? CLR_WHITE) : CLR_WHITE;
         show_glyph_cell(x, y, mch, mcol, false);
         const tg = terrain_glyph(loc, x, y);
         loc.remembered_glyph = { ch: tg.ch, color: tg.color, decgfx: tg.dec };
