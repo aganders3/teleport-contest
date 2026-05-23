@@ -168,14 +168,14 @@ export async function moveloop_core() {
     // legacy sessions; here we consume the remaining ones.
     // preGameMoveCount = number of leading ' '/'n'/'y' chars in the moves string.
     // For legacy=true:  extra = preGameMoveCount - 1  (1 already consumed above)
-    // For legacy=false: extra = preGameMoveCount
+    // For legacy=false: no pre-game pager; legacy=false sessions go straight to play.
     if (!g._preGameDone) {
         g._preGameDone = true;
         const legacy = g.flags?.legacy !== false;
         const preGameMoveCount = g._preGameMoveCount || 0;
         const extraNhgetch = legacy
             ? Math.max(0, preGameMoveCount - 1)
-            : preGameMoveCount;
+            : 0;
         if (extraNhgetch > 0) {
             // Build screen with pending welcome message before first pre-game nhgetch,
             // so the screen captures during the pager/tutorial phase see the message.
