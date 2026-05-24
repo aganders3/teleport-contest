@@ -983,8 +983,10 @@ async function makemon(mdat, x, y, mmflags) {
 }
 
 // maketrap stub
+// C ref: trap.c mktrap() — for hole/trapdoor traps, calls hole_destination(rn2(4))
 async function maketrap(x, y, typ) {
     const trap = { ttyp: typ, tx: x, ty: y, tseen: false, once: false, launch: { x: 0, y: 0 } };
+    if (typ === HOLE || typ === TRAPDOOR) rn2(4); // hole_destination(trap.c:450)
     if (!game.level) return trap;
     if (!game.level.traps) game.level.traps = [];
     game.level.traps.push(trap);
