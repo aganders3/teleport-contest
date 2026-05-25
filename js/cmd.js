@@ -475,7 +475,22 @@ async function doThrow() {
     const dirKey = await nhgetch();
     if (dirKey === 27) { game.context.move = 0; return; }
 
-    // Throwing takes a turn; delegate RNG to fastforward for now
+    // C ref: dothrow.c throw_obj() — multishot + throwit RNG.
+    // rnd(multishot) at dothrow.c:233 fires only when obj->quan > 1 AND:
+    //   - item is not launcher-ammo (darts, shurikens, etc.): always enters block
+    //   - item IS launcher-ammo (arrows, quarrels): only if matching launcher wielded
+    // is_ammo in C: oc_skill in [-P_CROSSBOW, -P_BOW] → arrows (18-22) + quarrel (23)
+    // Darts (24) are missiles but not ammo → enter multishot block unconditionally.
+    const LAUNCHER_AMMO = new Set([18, 19, 20, 21, 22, 23]); // ARROW..QUARREL
+    const throwItem = invent.find(i => i.letter === String.fromCharCode(rawKey));
+    const throwOtyp = throwItem?._otyp ?? -1;
+    const quan = throwItem?._quan ?? 1;
+    // Arrows/quarrels need matching launcher wielded; simplified: assume not wielded
+    const isLauncherAmmo = LAUNCHER_AMMO.has(throwOtyp);
+    if (quan > 1 && !isLauncherAmmo) rnd(1); // multishot = rnd(1): dothrow.c:233
+    rnd(2);                                   // next_ident: mkobj.c:521
+    rn2(100);                                 // obj_resists/breaktest: zap.c:1469
+
     game.context.move = 1;
 }
 
