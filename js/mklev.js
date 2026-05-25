@@ -165,17 +165,26 @@ const PICK_AXE            = 259;
 // Food (otyp 264-296)
 const TRIPE_RATION        = 264;
 const CORPSE              = 265;
+const EGG                 = 266;
 const KELP_FROND          = 275;
+const EUCALYPTUS_LEAF     = 276;
 const APPLE               = 277;
 const ORANGE              = 278;
+const PEAR                = 279;
+const MELON               = 280;
+const BANANA              = 281;
 const CARROT              = 282;
 const SPRIG_OF_WOLFSBANE  = 283;
 const CLOVE_OF_GARLIC     = 284;
+const SLIME_MOLD          = 285;
 const CREAM_PIE           = 287;
+const CANDY_BAR           = 288;
 const FORTUNE_COOKIE      = 289;
+const PANCAKE             = 290;
 const LEMBAS_WAFER        = 291;
 const CRAM_RATION         = 292;
 const FOOD_RATION         = 293;
+const TIN                 = 296;
 // Potions (otyp 297-322)
 const POT_SPEED           = 302;
 const POT_HEALING         = 307;
@@ -527,9 +536,8 @@ function mksobj_init(otmp, artif) {
             rn2(11); // assign_candy_wrapper: rn2(SIZE(candy_wrappers)-1) = rn2(12-1)
         }
         // Generic food quantity check (skipped for CORPSE, MEAT_RING, KELP_FROND, puddings)
-        // Most food types reach here
         if (otmp._food_type !== 'CORPSE' && otmp._food_type !== 'MEAT_RING') {
-            rn2(6); // quan=2 if !rn2(6)
+            otmp.quan = rn2(6) ? 1 : 2;
         }
         break;
     }
@@ -598,15 +606,42 @@ function mksobj_init(otmp, artif) {
     }
 }
 
-// Food type classification from rnd(1000) probability result
-// Returns string category for mksobj_init dispatch
-function food_type_from_prob(p) {
-    // Cumulative probabilities for FOOD_CLASS objects (total=1000):
-    // tripe_ration(140), egg(85)=225, eucalyptus-garlic(87)=312, slime_mold(75)=387,
-    // cream_pie(25)=412, candy_bar(13)=425, fortune_cookie-food_ration(500)=925, tin(75)=1000
-    if (p <= 225) return p <= 140 ? 'GENERIC' : 'EGG';
-    if (p <= 925) return p <= 425 && p > 412 ? 'CANDY_BAR' : 'GENERIC';
-    return 'TIN';
+// Map rnd(1000) result to actual food otyp (cumulative probabilities from objects.h)
+// Cumulative: tripe(140), egg(225), eucalyptus(228), apple(243), orange(253),
+// pear(263), melon(273), banana(283), carrot(298), wolfsbane(305), garlic(312),
+// slime_mold(387), cream_pie(412), candy_bar(425), fortune_cookie(480),
+// pancake(505), lembas(525), cram(545), food_ration(925), tin(1000)
+function food_prob_to_otyp(p) {
+    if (p <= 140) return TRIPE_RATION;
+    if (p <= 225) return EGG;
+    if (p <= 228) return EUCALYPTUS_LEAF;
+    if (p <= 243) return APPLE;
+    if (p <= 253) return ORANGE;
+    if (p <= 263) return PEAR;
+    if (p <= 273) return MELON;
+    if (p <= 283) return BANANA;
+    if (p <= 298) return CARROT;
+    if (p <= 305) return SPRIG_OF_WOLFSBANE;
+    if (p <= 312) return CLOVE_OF_GARLIC;
+    if (p <= 387) return SLIME_MOLD;
+    if (p <= 412) return CREAM_PIE;
+    if (p <= 425) return CANDY_BAR;
+    if (p <= 480) return FORTUNE_COOKIE;
+    if (p <= 505) return PANCAKE;
+    if (p <= 525) return LEMBAS_WAFER;
+    if (p <= 545) return CRAM_RATION;
+    if (p <= 925) return FOOD_RATION;
+    return TIN;
+}
+
+// Derive mksobj_init dispatch type string from actual food otyp
+function food_otyp_to_type(otyp) {
+    if (otyp === EGG) return 'EGG';
+    if (otyp === TIN) return 'TIN';
+    if (otyp === KELP_FROND) return 'KELP_FROND';
+    if (otyp === CANDY_BAR) return 'CANDY_BAR';
+    if (otyp === CORPSE) return 'CORPSE';
+    return 'GENERIC';
 }
 
 // mkobjprobs: class selection probabilities for RANDOM_CLASS mkobj
@@ -675,7 +710,8 @@ function mksobj_from_class(oclass, typProb, init_forced, artif) {
     };
     // Annotate type-specific metadata for mksobj_init dispatch
     if (oclass === FOOD_CLASS) {
-        otmp._food_type = food_type_from_prob(typProb);
+        otmp.otyp = food_prob_to_otyp(typProb);
+        otmp._food_type = food_otyp_to_type(otmp.otyp);
     } else if (oclass === GEM_CLASS) {
         otmp._gem_type = 'GENERIC'; // simplified: treat all gems as generic
     } else if (oclass === WEAPON_CLASS) {
