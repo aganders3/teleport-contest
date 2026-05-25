@@ -18,11 +18,13 @@ import { getrumor } from './rumors.js';
 // Direction deltas: y u k
 //                   h . l
 //                   b j n
-const DIR_DX = { h: -1, l: 1, j: 0, k: 0, y: -1, u: 1, b: -1, n: 1 };
-const DIR_DY = { h: 0, l: 0, j: 1, k: -1, y: -1, u: -1, b: 1, n: 1 };
+const DIR_DX = { h:-1, l:1, j:0, k:0, y:-1, u:1, b:-1, n:1,
+                  H:-1, L:1, J:0, K:0, Y:-1, U:1, B:-1, N:1 };
+const DIR_DY = { h:0, l:0, j:1, k:-1, y:-1, u:-1, b:1, n:1,
+                 H:0, L:0, J:1, K:-1, Y:-1, U:-1, B:1, N:1 };
 
 function isMovementKey(ch) {
-    return 'hjklyubn'.includes(ch);
+    return 'hjklyubnHJKLYUBN'.includes(ch);
 }
 
 // C ref: hack.c — check if a cell blocks movement
@@ -404,10 +406,10 @@ async function doEat() {
     }
 
     const letters = eatables.map(i => i.letter).sort().join('');
-    const prompt = `What do you want to eat? [${letters} or ?*] `;
+    const prompt = `What do you want to eat? [${letters} or ?*]`;
     game._pending_message = prompt;
     await flush_screen(1);
-    if (disp) disp.setCursor(prompt.length, 0);
+    if (disp) disp.setCursor(prompt.length + 1, 0);
 
     const rawKey = await nhgetch();
     const itemLetter = String.fromCharCode(rawKey);
@@ -480,19 +482,19 @@ async function doThrow() {
     }
 
     const letters = throwable.map(i => i.letter).sort().join('');
-    const prompt = `What do you want to throw? [${letters} or ?*] `;
+    const prompt = `What do you want to throw? [${letters} or ?*]`;
     game._pending_message = prompt;
     await flush_screen(1);
-    if (disp) disp.setCursor(prompt.length, 0);
+    if (disp) disp.setCursor(prompt.length + 1, 0);
 
     const rawKey = await nhgetch();
     if (rawKey === 27) { game.context.move = 0; return; }
 
     // Direction prompt
-    const dirPrompt = 'In what direction? ';
+    const dirPrompt = 'In what direction?';
     game._pending_message = dirPrompt;
     await flush_screen(1);
-    if (disp) disp.setCursor(dirPrompt.length, 0);
+    if (disp) disp.setCursor(dirPrompt.length + 1, 0);
 
     const dirKey = await nhgetch();
     if (dirKey === 27) { game.context.move = 0; return; }
@@ -558,6 +560,8 @@ export async function rhack(key) {
         game.context.move = 0;
     } else {
         // Unknown command: no turn
+        const printable = key >= 32 && key < 127 ? `'${ch}'.` : `(${key}).`;
+        await pline(`Unknown command ${printable}`);
         game.context.move = 0;
     }
 }
