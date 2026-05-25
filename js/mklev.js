@@ -9,7 +9,7 @@ import { RUMORS_B64, ENGRAVE_B64 } from './dat_inline.js';
 import { game } from './gstate.js';
 import { GameMap } from './game.js';
 import { rn2, rnd, rn1, d, rnz, rne } from './rng.js';
-import { MONS, SPECIAL_PM, MON_FLAGS } from './mondata.js';
+import { MONS, SPECIAL_PM, MON_FLAGS, MON_NAMES } from './mondata.js';
 import { init_rect, rnd_rect, get_rect, split_rects } from './rect.js';
 import { depth as depth_of_level } from './hacklib.js';
 import {
@@ -522,10 +522,9 @@ function mksobj_init(otmp, artif) {
             }
         } else if (otmp._food_type === 'TIN') {
             if (!rn2(6)) {
-                // spinach — no rndmonnum
+                otmp._tin_spinach = true; // spinach tin
             } else {
-                // flesh tin: rndmonnum() for monster + set_tin_variety
-                rndmonnum();
+                otmp._tin_pm = rndmonnum(); // flesh tin: record monster
                 rn2(15); // set_tin_variety: rn2(15) for preparation
             }
             blessorcurse(otmp, 10);

@@ -4,6 +4,7 @@
 import { rn2, rnd, rn1 } from "./rng.js";
 import { mksobj, mkobj } from "./mklev.js";
 import { game } from "./gstate.js";
+import { MON_NAMES } from "./mondata.js";
 
 // Object classes (must match mklev.js)
 const WEAPON_CLASS = 2;
@@ -453,7 +454,7 @@ const ITEM_NAMES = {
     [LEMBAS_WAFER]: { name: 'lembas wafer' },
     [CRAM_RATION]: { name: 'cram ration' },
     [FOOD_RATION]: { name: 'food ration' },
-    [TIN]:       { name: 'tin', noUncursed: true },
+    [TIN]:       { name: 'tin' },
     // Potions
     [POT_HEALING]: { name: 'potion of healing', typeStr: 'potion of healing' },
     [POT_EXTRA_HEALING]: { name: 'potion of extra healing', typeStr: 'potion of extra healing' },
@@ -528,17 +529,29 @@ function pluralize(name, explicitPlural) {
 }
 
 // Build the human-readable description for an inventory slot.
-function build_item_desc(otyp, oclass, quan, blessed, cursed, spe) {
+// tinPm: monster index for flesh tins; tinSpinach: true for spinach tins.
+function build_item_desc(otyp, oclass, quan, blessed, cursed, spe, tinPm, tinSpinach) {
     if (oclass === COIN_CLASS) return `${quan} gold pieces`;
 
     const meta = ITEM_NAMES[otyp];
-    const baseName = meta ? meta.name : `item #${otyp}`;
+    let baseName = meta ? meta.name : `item #${otyp}`;
     const noUncursed = meta?.noUncursed || false;
 
-    // BUC prefix
+    // TIN: include contents in name
+    if (oclass === FOOD_CLASS && otyp === TIN) {
+        let contents = 'unknown creature';
+        if (tinSpinach) contents = 'spinach';
+        else if (tinPm !== undefined && tinPm >= 0) contents = MON_NAMES[tinPm] || 'unknown creature';
+        baseName = `tin of ${contents}`;
+    }
+
+    // BUC prefix — for weapons (implicit_uncursed default): omit "uncursed"
     let buc = '';
     if (!noUncursed) {
-        buc = blessed ? 'blessed ' : cursed ? 'cursed ' : 'uncursed ';
+        if (blessed) buc = 'blessed ';
+        else if (cursed) buc = 'cursed ';
+        else if (oclass !== WEAPON_CLASS) buc = 'uncursed ';
+        // WEAPON_CLASS: implicit_uncursed is on by default — enhancement implies uncursed
     }
 
     // Enhancement prefix (+N/-N) for weapons and armor
@@ -572,6 +585,7 @@ function build_item_desc(otyp, oclass, quan, blessed, cursed, spe) {
 
 // C ref: invent.c addinv() — add object to player inventory.
 // Stacks items of same otyp+bless+spe into one slot; assigns new letter otherwise.
+// Returns the inventory item slot that was created or updated.
 export function addinv(obj) {
     const g = game;
     if (!g.u) g.u = {};
@@ -583,21 +597,22 @@ export function addinv(obj) {
     const blessed = !!obj.blessed;
     const cursed  = !!obj.cursed;
     const spe     = obj.spe || 0;
+    const tinPm     = obj._tin_pm;
+    const tinSpinach = obj._tin_spinach;
 
     if (oclass === COIN_CLASS) {
-        // Gold always uses '$'; update quan if slot exists
         const existing = g.u.invent.find(i => i.letter === '$');
         if (existing) {
             existing._quan = (existing._quan || 0) + quan;
             existing.desc = build_item_desc(otyp, oclass, existing._quan, false, false, 0);
+            return existing;
         } else {
-            g.u.invent.push({
-                letter: '$', category: 'Coins',
+            const slot = { letter: '$', category: 'Coins',
                 desc: build_item_desc(otyp, oclass, quan, false, false, 0),
-                _otyp: otyp, _quan: quan, _blessed: false, _cursed: false, _spe: 0,
-            });
+                _otyp: otyp, _quan: quan, _blessed: false, _cursed: false, _spe: 0 };
+            g.u.invent.push(slot);
+            return slot;
         }
-        return;
     }
 
     // Try to merge with existing slot of same otyp+bless+cursed+spe
@@ -606,17 +621,19 @@ export function addinv(obj) {
     );
     if (existing) {
         existing._quan += quan;
-        existing.desc = build_item_desc(otyp, oclass, existing._quan, blessed, cursed, spe);
-        return;
+        existing.desc = build_item_desc(otyp, oclass, existing._quan, blessed, cursed, spe, tinPm, tinSpinach);
+        return existing;
     }
 
     // New inventory slot
-    g.u.invent.push({
+    const slot = {
         letter: next_inv_letter(),
         category: oclass_to_category(oclass),
-        desc: build_item_desc(otyp, oclass, quan, blessed, cursed, spe),
+        desc: build_item_desc(otyp, oclass, quan, blessed, cursed, spe, tinPm, tinSpinach),
         _otyp: otyp, _quan: quan, _blessed: blessed, _cursed: cursed, _spe: spe,
-    });
+    };
+    g.u.invent.push(slot);
+    return slot;
 }
 
 // C ref: u_init.c ini_inv_adjust_obj() — post-creation adjustments
@@ -646,6 +663,46 @@ function ini_inv_adjust_obj(trop, otmp) {
     return stop;
 }
 
+// Ammo/missile otyp range (ARROW=18 through shuriken area ~26)
+// These are the weapon types that go to uquiver in ini_inv_use_obj.
+const AMMO_MISSILE_MIN = 18, AMMO_MISSILE_MAX = 26;
+
+// C ref: u_init.c ini_inv_use_obj() — assign worn/wielded/quivered state
+// and discover identified items (scrolls, potions).
+function ini_inv_use_obj_js(obj, slot) {
+    const g = game;
+    const oclass = obj.oclass;
+    const otyp = obj.otyp;
+
+    if (oclass === WEAPON_CLASS || otyp === TIN_OPENER) {
+        // Ammo/missile → uquiver; others → uwep (ignored for display)
+        const isAmmoMissile = otyp >= AMMO_MISSILE_MIN && otyp <= AMMO_MISSILE_MAX;
+        if (isAmmoMissile && !g.u.uquiver) {
+            g.u.uquiver = slot.letter;
+        }
+    } else if (oclass === ARMOR_CLASS) {
+        slot._worn = true;
+    } else if (oclass === SCROLL_CLASS || oclass === POTION_CLASS) {
+        // C: discover_object if has description (appearance) and known
+        const meta = ITEM_NAMES[otyp];
+        const typeStr = meta?.typeStr || meta?.name;
+        if (typeStr && game.obj_appearances) {
+            const appearance = game.obj_appearances[typeStr];
+            if (appearance) {
+                if (!g.u.discoveries) g.u.discoveries = [];
+                const catName = oclass_to_category(oclass);
+                let group = g.u.discoveries.find(d => d.category === catName);
+                if (!group) {
+                    group = { category: catName, items: [] };
+                    g.u.discoveries.push(group);
+                }
+                const entry = `${typeStr} (${appearance})`;
+                if (!group.items.includes(entry)) group.items.push(entry);
+            }
+        }
+    }
+}
+
 // C ref: u_init.c ini_inv() — main inventory initialization loop
 function ini_inv(trobj_arr, roleName, raceName) {
     const g = game;
@@ -665,7 +722,8 @@ function ini_inv(trobj_arr, roleName, raceName) {
         if (ini_inv_adjust_obj(trop, obj)) {
             quan = 1;
         }
-        addinv(obj);
+        const slot = addinv(obj);
+        ini_inv_use_obj_js(obj, slot);
         if (obj.oclass === SPBOOK_CLASS && (SPE_LEVEL[obj.otyp] ?? 0) === 1) {
             got_sp1 = true;
         }

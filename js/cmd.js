@@ -71,6 +71,12 @@ async function showPager(lines, promptRow, promptText, startCol, keepStatus, cur
 }
 
 // ── Inventory ('i') ──
+// Canonical NetHack inventory category display order
+const CATEGORY_ORDER = [
+    'Coins', 'Weapons', 'Armor', 'Comestibles', 'Scrolls', 'Amulets',
+    'Potions', 'Rings', 'Wands', 'Spellbooks', 'Tools', 'Gems/Stones', 'Miscellaneous',
+];
+
 // C ref: invent.c display_inventory()
 async function doInventory() {
     const invent = game.u?.invent || [];
@@ -79,14 +85,26 @@ async function doInventory() {
         return;
     }
 
+    // Sort by canonical category order, preserving original order within each category
+    const sorted = [...invent].sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a.category);
+        const bi = CATEGORY_ORDER.indexOf(b.category);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+
+    const uquiver = game.u?.uquiver; // letter of readied ammo/missile
+
     const lines = [];
     let lastCategory = null;
-    for (const item of invent) {
+    for (const item of sorted) {
         if (item.category !== lastCategory) {
             lines.push({ text: item.category, attr: ATR_INVERSE });
             lastCategory = item.category;
         }
-        lines.push(`${item.letter} - ${item.desc}`);
+        let desc = item.desc;
+        if (item.letter === uquiver) desc += ' (at the ready)';
+        if (item._worn) desc += ' (being worn)';
+        lines.push(`${item.letter} - ${desc}`);
     }
     lines.push('(end)');
 
@@ -99,7 +117,11 @@ async function doInventory() {
 // ── Known-item discoveries ('\\') ──
 // C ref: invent.c display_used_invlets() / doprgold()
 async function doDiscoveries() {
-    const discoveries = game.u?.discoveries || [];
+    const discoveries = [...(game.u?.discoveries || [])].sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a.category);
+        const bi = CATEGORY_ORDER.indexOf(b.category);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
     const lines = ['Discoveries, by order of discovery within each class', ''];
     for (const group of discoveries) {
         lines.push({ text: group.category, attr: ATR_INVERSE });
