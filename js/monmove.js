@@ -50,33 +50,64 @@ function ambient() {
     rn2(40 + dex * 3);
 }
 
-// C ref: dogmove.c dog_goal() — pet scans nearby objects for apport, then decides approach
-// Sequence: for each adjacent object: obj_resists rn2(100) + apport rn2(8)
-//           then if udist > 1 and player in room: approach check rn2(4) [dogmove.c:575]
+// C ref: dogmove.c dog_goal() — pet scans floor objects for apport goal, then follow-player.
+//
+// C structure (dogmove.c:483-640):
+//   for (obj = fobj; obj; obj = obj->nobj)  — iterate ALL floor objects
+//     if within SQSRCHRADIUS(5):
+//       dogfood() → obj_resists(obj, 0, 95) → rn2(100)          always
+//       if (gtyp==UNDEF && in_masters_sight && !dog_has_minvent
+//           && m_cansee && edog->apport > rn2(8)                 dogmove.c:554
+//           && can_carry > 0):
+//         gtyp = APPORT
+//   if (gtyp==UNDEF || non-food goal):                           follow player
+//     if udist > 1 && IS_ROOM: !rn2(4) check                    dogmove.c:575
+//
+// can_carry: dogs cannot carry containers (CHEST etc.); those consume
+// rn2(8) but leave gtyp==UNDEF, so the follow-player rn2(4) still fires.
+const SQSRCHRADIUS = 5;
+// Containers dogs cannot carry — can_carry(dog, obj)==0 for these
+const UNCAUGHT_OTYPS = new Set([215 /*CHEST*/, 200 /*LARGE_BOX*/, 212 /*ICE_BOX*/]);
+
 function dog_goal_rng(mon) {
     const g = game;
     const mx = mon.mx, my = mon.my;
-    // Scan 9 cells: dog's cell + 8 neighbors (C: mx-1..mx+1, my-1..my+1)
-    if (g.level?.objects) {
-        for (let nx = mx - 1; nx <= mx + 1; nx++) {
-            for (let ny = my - 1; ny <= my + 1; ny++) {
-                const key = `${nx},${ny}`;
-                const objs = g.level.objects[key];
-                if (!objs) continue;
-                for (const obj of objs) {
-                    rn2(100); // obj_resists: zap.c:1469
-                    rn2(8);   // apport check: dogmove.c:554
-                }
+    // edog->apport initialised to ACURR(A_CHA); A_CHA = acurr.a[5]
+    const apport = mon._apport ?? (g.u?.acurr?.a?.[5] ?? 10);
+
+    let gtyp = 6; // UNDEF — no goal found yet
+
+    // Scan all floor objects within SQSRCHRADIUS=5 (C iterates global fobj list)
+    for (const obj of (g.level?.allObjects || [])) {
+        const nx = obj.ox, ny = obj.oy;
+        if (nx == null) continue;
+        if (nx < mx - SQSRCHRADIUS || nx > mx + SQSRCHRADIUS ||
+            ny < my - SQSRCHRADIUS || ny > my + SQSRCHRADIUS) continue;
+
+        // dogfood() calls obj_resists(obj, 0, 95) which always calls rn2(100)
+        rn2(100); // zap.c:1469
+
+        // APPORT candidate: rn2(8) fires when gtyp==UNDEF and standard conditions
+        // (in_masters_sight, !dog_has_minvent, m_cansee — all assumed true at level 1)
+        if (gtyp === 6) { // UNDEF
+            const r8 = rn2(8); // dogmove.c:554
+            const otyp = obj.otyp ?? obj._otyp ?? 0;
+            if (apport > r8 && !UNCAUGHT_OTYPS.has(otyp)) {
+                gtyp = 4; // APPORT — dog has a fetch goal, skip follow-player check
             }
         }
     }
-    // C ref: dogmove.c:575 — if udist > 1: IS_ROOM check then rn2(4) approach decision
-    // When player is in a room (typical) and not adjacent to dog: rn2(4) fires.
-    // Chebyshev distance: max(|dx|, |dy|)
-    const ux = g.u?.ux, uy = g.u?.uy;
-    if (ux != null) {
-        const udist = Math.max(Math.abs(ux - mx), Math.abs(uy - my));
-        if (udist > 1) rn2(4); // approach-player decision: dogmove.c:575
+
+    // Follow-player approach check — only when no fetch goal (gtyp==UNDEF)
+    // C ref: dogmove.c:574 — if (udist > 1) { if (!IS_ROOM || !rn2(4) ...) }
+    // udist is distu() = squared Euclidean distance (not Chebyshev).
+    // Diagonal neighbor has udist=2, so rn2(4) fires even when 1 step away diagonally.
+    if (gtyp === 6) { // UNDEF
+        const ux = g.u?.ux, uy = g.u?.uy;
+        if (ux != null) {
+            const udist = (ux - mx) ** 2 + (uy - my) ** 2; // distu(): squared Euclidean
+            if (udist > 1) rn2(4); // dogmove.c:575
+        }
     }
 }
 

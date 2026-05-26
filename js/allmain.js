@@ -8,7 +8,7 @@ import { game } from './gstate.js';
 import { rn2, rnd } from './rng.js';
 import { nhgetch } from './input.js';
 import { mklev, l_nhcore_init, u_on_upstairs, makedog } from './mklev.js';
-import { rhack } from './cmd.js';
+import { rhack, movePets } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
 import { fastforward_u_init_misc, fastforward_post_mklev, fastforward_step } from './fastforward.js';
@@ -228,6 +228,8 @@ export async function moveloop_core() {
             general_step(stepNum);
         }
         g._lastFastforwardStep = stepNum;
+        // Move pets after dog_goal_rng has run (C: dochug calls dog_goal then dog_move)
+        if (stepNum >= 2) movePets();
     }
 }
 

@@ -3426,6 +3426,6 @@ export function makedog() {
             _petKind: petKind, _pet: true,
         };
         if (!g.level.monsters) g.level.monsters = [];
-        g.level.monsters.push(mtmp);
+        g.level.monsters.unshift(mtmp); // dog.c adds to head of fmon list
     }
 }

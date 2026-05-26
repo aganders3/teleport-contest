@@ -597,14 +597,14 @@ async function domove(dx, dy) {
     vision_recalc(1);
     newsym(newx, newy);
 
-    // Move pets one step toward player (simplified dog-following AI).
-    // C ref: dogmove.c dog_move() — pet follows the hero after each turn.
-    movePets();
+    // movePets() is called after general_step() in allmain.js so that
+    // dog_goal_rng sees the dog's pre-move position (matching C's ordering:
+    // dochug runs dog_goal THEN dog_move, both after the player has moved).
 }
 
 // C ref: dogmove.c dog_move() — simplified: move each pet one step toward hero.
 // Tries primary diagonal, then cardinal directions, skips player's cell and walls.
-function movePets() {
+export function movePets() {
     const g = game;
     const monsters = g.level?.monsters;
     if (!monsters?.length) return;
