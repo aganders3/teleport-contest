@@ -94,6 +94,9 @@ export class NethackGame {
         g.plname = g.flags.debug ? 'wizard' : (opts.name || 'Hero');
         g.iflags = { ...opts.iflags };
         if (opts.preferred_pet) g.preferred_pet = opts.preferred_pet;
+        if (opts.dogname) g.flags.dogname = opts.dogname;
+        if (opts.catname) g.flags.catname = opts.catname;
+        if (opts.horsename) g.flags.horsename = opts.horsename;
         if (opts.tutorial_set) g.tutorial_set_in_config = true;
 
         // Initialize hero struct
@@ -259,14 +262,25 @@ export async function runSegment(input) {
         }
     }
 
-    // Count leading pre-game keys (pager dismissal: ' '; tutorial: 'n'/'y').
-    // moveloop_core fires this many nhgetch calls before the first game command
-    // to align step indices with the C recording's pager/tutorial phase.
-    const PRE_GAME_CHARS = new Set([' ', 'n', 'y']);
+    // Count leading pre-game keys consumed by C's pager/tutorial system.
+    // For legacy+tutorial sessions: ALL chars until (and including) the first
+    // 'n'/'y' are pre-game (spaces dismiss pager pages + --More--; any other
+    // key is invalid in the tutorial menu and causes redisplay; 'n'/'y' ends it).
+    // For legacy+no-tutorial: only leading spaces (pager + welcome --More--).
+    // For !legacy: 0 (no pager; welcome message appears but needs no pre-game nhgetch).
+    const hasLegacy = !/!legacy/i.test(nethackrc);
+    const hasTutorial = hasLegacy && !/!tutorial/i.test(nethackrc);
     let preGameCount = 0;
-    for (const ch of effectiveMoves) {
-        if (PRE_GAME_CHARS.has(ch)) preGameCount++;
-        else break;
+    if (hasTutorial) {
+        for (const ch of effectiveMoves) {
+            preGameCount++;
+            if (ch === 'n' || ch === 'y') break;
+        }
+    } else if (hasLegacy) {
+        for (const ch of effectiveMoves) {
+            if (ch === ' ') preGameCount++;
+            else break;
+        }
     }
 
     const nhGame = new NethackGame({ seed, nethackrc, storage });

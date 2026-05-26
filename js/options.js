@@ -41,6 +41,9 @@ export function parseNethackrc(rc) {
                     else if (val === 'dog' || val === 'd') result.preferred_pet = 'd';
                     else if (val === 'cat' || val === 'c') result.preferred_pet = 'c';
                 }
+                else if (key === 'dogname') result.dogname = val;
+                else if (key === 'catname') result.catname = val;
+                else if (key === 'horsename') result.horsename = val;
                 else if (key === 'symset') result.symset = val;
                 else if (key === 'suppress_alert') result.flags.suppress_alert = val;
                 else if (key === 'msg_window') result.iflags.prevmsg_window = val;
