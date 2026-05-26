@@ -816,18 +816,17 @@ function mkgold(amount, x, y) {
         const mul = rnd(Math.trunc(30 / Math.max(12 - depthVal, 2)));
         amount = 1 + rnd(level_difficulty() + 2) * mul;
     }
-    // Check if gold already exists at (x,y) — if so, no new object (no next_ident)
     const g = game;
     if (!g.level) { next_ident(); return; }
-    if (!g.level._gold_cells) g.level._gold_cells = new Map();
+    // C uses g_at(x,y) to find existing gold — check game.level.objects for GOLD_PIECE
     const key = `${x},${y}`;
-    if (g.level._gold_cells.has(key)) {
-        // Existing gold: just increment quan, no next_ident call
-        g.level._gold_cells.set(key, (g.level._gold_cells.get(key) || 0) + amount);
+    const existing = g.level.objects?.[key]?.find(o => o._otyp === GOLD_PIECE || o.otyp === GOLD_PIECE);
+    if (existing) {
+        existing.quan += amount;
     } else {
-        // New gold: mksobj_at(GOLD_PIECE) calls next_ident
-        next_ident();
-        g.level._gold_cells.set(key, amount);
+        // mksobj_at calls next_ident() + place_object() — COIN_CLASS mksobj_init is a no-op
+        const gold = mksobj_at(GOLD_PIECE, x, y, true, false);
+        if (gold) { gold.quan = amount; gold._otyp = GOLD_PIECE; }
     }
 }
 
