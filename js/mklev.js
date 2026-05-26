@@ -859,7 +859,9 @@ const CORPSTAT_INIT = 0x08;
 const CORPSTAT_NONE = 0x00;
 function mkcorpstat(objtyp, mtmp, pm, x, y, flags) {
     const init = (flags & CORPSTAT_INIT) !== 0;
-    const otmp = mksobj(objtyp, init, false);
+    // C uses mksobj_at when x,y are non-zero (place on floor); mksobj otherwise
+    const otmp = (x > 0 && y >= 0) ? mksobj_at(objtyp, x, y, init, false)
+                                    : mksobj(objtyp, init, false);
     // Set corpsenm from pm (monster index) if provided
     if (pm !== null && pm !== undefined && pm >= 0) otmp.corpsenm = pm;
     return otmp;
@@ -2652,6 +2654,87 @@ function place_niche(aroom) {
     return { dy, xx, yy };
 }
 
+// C ref: makemon.c mkclass(S_HUMAN, 0) — pick a random S_HUMAN monster type.
+// Iterates S_HUMAN monsters in difficulty-sorted order, consuming rn2(9) for each,
+// then picks from valid candidates with rnd(num). Returns a PM index or -1.
+function mkclass_human() {
+    // S_HUMAN monsters (PM 266-293) sorted by difficulty, then by PM index for ties.
+    // Precomputed from MONS array via stable sort: same ordering C produces after
+    // init_mongen_order()+qsort on the identity array.
+    const HUMAN_ORDER = [270,266,267,268,269,271,272,273,283,288,284,274,275,276,286,289,280,285,278,279,287,277,281,292,290,282,291,293];
+    // PM_HUMAN=266 and PM_ELF=270 are is_placeholder() — never generatable.
+    const PLACEHOLDERS = new Set([266, 270]);
+
+    const dlevel = game.u?.uz?.dlevel ?? 1;
+    const ulevel = game.u?.ulevel ?? 1;
+    const maxmlev = Math.trunc(dlevel /* level_difficulty() */ >> 1); // dlevel >> 1 at level 1 = 0
+    const gehennom = false; // all contest sessions are in main dungeon, not Gehennom
+
+    // nums[i]: candidate weight for HUMAN_ORDER[i]; 0 = not a candidate
+    const nums = new Array(HUMAN_ORDER.length).fill(0);
+    let num = 0;
+    let lastIdx = HUMAN_ORDER.length; // exclusive end of iteration
+
+    for (let i = 0; i < HUMAN_ORDER.length; i++) {
+        const pm = HUMAN_ORDER[i];
+        const m = MONS[pm];
+        const geno = m[0], diff = m[1], mlevel = m[2];
+
+        // rn2(9) is always consumed for every monster in the class (no alignment skip
+        // since mkclass uses A_NONE which disables the alignment filter).
+        const r9 = rn2(9);
+
+        // Build gn_mask: G_NOGEN|G_UNIQ always; add G_HELL when not in Gehennom
+        // and rn2(9) was non-zero (C: if (rn2(9) || class==S_LICH) gn_mask|=G_HELL).
+        let gn_mask = G_NOGEN | G_UNIQ;
+        if (r9) gn_mask |= (gehennom ? G_NOHELL : G_HELL);
+
+        // mk_gen_ok: geno must not intersect gn_mask; monster must not be a placeholder.
+        // G_GONE (genocided/extinct) is 0 in a fresh game — skip that check.
+        if ((geno & gn_mask) || PLACEHOLDERS.has(pm)) continue;
+
+        // freq (k): 0-freq monsters don't contribute candidates
+        // (zero_freq_for_entire_class is false for S_HUMAN since max freq = 3).
+        const k = geno & G_FREQ;
+        if (k === 0) continue;
+
+        // montoostrong: diff > maxmlev*2; at level 1, maxmlev=0 so ALL are too strong.
+        // Break condition: num>0 AND toostrong AND diff > diff of previous in sorted order.
+        const prevDiff = i > 0 ? MONS[HUMAN_ORDER[i - 1]][1] : -1;
+        if (num > 0 && diff > maxmlev * 2 && diff > prevDiff && rn2(2)) {
+            lastIdx = i;
+            break;
+        }
+
+        // adj_lev: effective monster level for bias calculation.
+        // C formula: adj_lev(ptr) at dungeon level dlevel, hero ulevel.
+        let tmp = mlevel;
+        if (mlevel > 49) { tmp = 50; }
+        else {
+            const diff_adj = dlevel - mlevel;
+            if (diff_adj < 0) tmp--; else tmp += Math.trunc(diff_adj / 5);
+            const ul_adj = ulevel - mlevel;
+            if (ul_adj > 0) tmp += Math.trunc(ul_adj / 4);
+        }
+        let tmp2 = Math.trunc(3 * mlevel / 2);
+        if (tmp2 > 49) tmp2 = 49;
+        const adjlev = tmp > tmp2 ? tmp2 : (tmp > 0 ? tmp : 0);
+
+        nums[i] = k + 1 - (adjlev > ulevel * 2 ? 1 : 0);
+        num += nums[i];
+    }
+
+    if (num === 0) return -1;
+
+    // Pick from candidates: rnd(num) then walk first..lastIdx subtracting weights.
+    let pick = rnd(num);
+    for (let i = 0; i < lastIdx; i++) {
+        pick -= nums[i];
+        if (pick <= 0) return HUMAN_ORDER[i];
+    }
+    return -1; // should not reach here
+}
+
 async function makeniche(trap_type) {
     const g = game;
     let vct = 8;
@@ -2681,9 +2764,9 @@ async function makeniche(trap_type) {
                 if (!rn2(5) && loc && IS_WALL(loc.typ)) {
                     loc.typ = IRONBARS;
                     if (rn2(3)) {
-                        // human corpse — consume rn2 for mkclass + mkcorpstat
-                        rn2(398); // mkclass(S_HUMAN)
-                        mkcorpstat(CORPSE, null, 0, xx, yy + dy, 1);
+                        // C: mkcorpstat(CORPSE, NULL, mkclass(S_HUMAN,0), xx, yy+dy, TRUE)
+                        const corpse_pm = mkclass_human();
+                        mkcorpstat(CORPSE, null, corpse_pm, xx, yy + dy, 1);
                     }
                 }
                 if (!g.level.flags.noteleport) {
@@ -3420,9 +3503,12 @@ export function makedog() {
     // Store pet in level monster list for rendering
     if (petPos && g.level) {
         const petChars = { cat: 'f', dog: 'd', pony: 'u' };
+        // C ref: mondata.h PM_LITTLE_DOG=16, PM_KITTEN=34, PM_PONY=102
+        const petMndx = { cat: 34, dog: 16, pony: 102 };
         const mtmp = {
             mx: petPos.x, my: petPos.y, m_id,
             _petChar: petChars[petKind] || 'd',
+            _mndx: petMndx[petKind] ?? 16,
             _petKind: petKind, _pet: true,
         };
         if (!g.level.monsters) g.level.monsters = [];
