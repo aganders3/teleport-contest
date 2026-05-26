@@ -784,6 +784,7 @@ function mksobj_at(otyp, x, y, init, artif) {
     if (game.level && x > 0 && y >= 0 && x < COLNO && y < ROWNO) {
         if (!game.level.floor_items) game.level.floor_items = new Map();
         game.level.floor_items.set(`${x},${y}`, obj);
+        place_object(obj, x, y);
     }
     return obj;
 }
@@ -793,6 +794,7 @@ function mkobj_at(oclass, x, y, artif) {
     if (game.level && x > 0 && y >= 0 && x < COLNO && y < ROWNO) {
         if (!game.level.floor_items) game.level.floor_items = new Map();
         game.level.floor_items.set(`${x},${y}`, obj);
+        place_object(obj, x, y);
     }
     return obj;
 }
@@ -829,12 +831,25 @@ function mkgold(amount, x, y) {
     }
 }
 
-function place_object(otmp, x, y) { /* stub */ }
+function place_object(otmp, x, y) {
+    if (!otmp || !game.level) return;
+    otmp.ox = x; otmp.oy = y;
+    if (!game.level.objects) game.level.objects = {};
+    const key = `${x},${y}`;
+    if (!game.level.objects[key]) game.level.objects[key] = [];
+    game.level.objects[key].push(otmp);
+    if (!game.level.allObjects) game.level.allObjects = [];
+    game.level.allObjects.push(otmp);
+}
 function dealloc_obj(otmp) { /* stub */ }
 function curse(otmp) { if (otmp) otmp.cursed = true; }
 function weight(otmp) { return otmp?.owt || 1; }
 function add_to_container(container, otmp) { /* stub */ }
-function sobj_at(otyp, x, y) { return false; }
+function sobj_at(otyp, x, y) {
+    const key = `${x},${y}`;
+    const objs = game.level?.objects?.[key];
+    return objs ? objs.some(o => o._otyp === otyp) : false;
+}
 
 // set_corpsenm stub
 function set_corpsenm(otmp, pm) { /* stub */ }
@@ -1453,6 +1468,14 @@ async function makemon(mdat, x, y, mmflags) {
 async function maketrap(x, y, typ) {
     const trap = { ttyp: typ, tx: x, ty: y, tseen: false, once: false, launch: { x: 0, y: 0 } };
     if (typ === HOLE || typ === TRAPDOOR) rn2(4); // hole_destination(trap.c:450)
+    if (typ === SQKY_BOARD) {
+        // C ref: trap.c choose_trapnote() — pick an unused musical note (0-11)
+        const existingTraps = game.level?.traps || [];
+        const usedNotes = new Set(existingTraps.filter(t => t.ttyp === SQKY_BOARD && t.tnote != null).map(t => t.tnote));
+        const available = [];
+        for (let k = 0; k < 12; k++) if (!usedNotes.has(k)) available.push(k);
+        trap.tnote = available.length > 0 ? available[rn2(available.length)] : rn2(12);
+    }
     if (!game.level) return trap;
     if (!game.level.traps) game.level.traps = [];
     game.level.traps.push(trap);

@@ -50,6 +50,27 @@ function ambient() {
     rn2(40 + dex * 3);
 }
 
+// C ref: dogmove.c dog_goal() — pet scans nearby objects for apport
+// For each object in adjacent cells: obj_resists rn2(100) + apport check rn2(8)
+// dog_goal returns a direction or 0 to indicate no move needed
+function dog_goal_rng(mon) {
+    const g = game;
+    if (!g.level?.objects) return;
+    const mx = mon.mx, my = mon.my;
+    // Scan 9 cells: dog's cell + 8 neighbors (C iterates mx-1..mx+1, my-1..my+1)
+    for (let nx = mx - 1; nx <= mx + 1; nx++) {
+        for (let ny = my - 1; ny <= my + 1; ny++) {
+            const key = `${nx},${ny}`;
+            const objs = g.level.objects[key];
+            if (!objs) continue;
+            for (const obj of objs) {
+                rn2(100); // obj_resists: zap.c:1469
+                rn2(8);   // apport check: dogmove.c:554
+            }
+        }
+    }
+}
+
 // C ref: allmain.c moveloop_core() — per-turn RNG for a single game turn.
 // Handles: movemon (when monsters have accumulated movement), mcalcmove
 // allocation, maybe_generate_rnd_mon, u_calc_moveamt, dosounds, gethungry,
@@ -60,10 +81,6 @@ function ambient() {
 //   no monster moves in movemon; only mcalcmove allocation + standard calls.
 // stepNum >= 2: monsters have movement=12 (normal speed) from previous
 //   mcalcmove; each awake monster goes through dochug (distfleeck calls).
-//   Full movemon simulation requires knowing awake state per monster;
-//   that tracking is deferred, so for stepNum>=2 only the allocation
-//   and standard calls are made here.  The seed8000 path in allmain.js
-//   uses the hardcoded fastforward_step table for steps 2-12 instead.
 export function general_step(stepNum) {
     if (stepNum < 1) return;
 
@@ -71,9 +88,21 @@ export function general_step(stepNum) {
     const monsters = g.level?.monsters || [];
     const monCount = monsters.length;
 
-    // mcalcmove: rn2(NORMAL_SPEED=12) per monster.
-    // For normal-speed monsters the rn2 result doesn't change the
-    // actual movement added (always +12), but the call is always made.
+    // movemon: at step >= 2, monsters accumulated movement from previous mcalcmove
+    // C ordering: movemon() (distfleeck per monster) THEN mcalcmove, then standard
+    if (stepNum >= 2) {
+        for (const mon of monsters) {
+            // distfleeck: called for every monster dochug processes
+            // C: movemon() only processes monsters with movement >= NORMAL_SPEED (12)
+            // After step 1 mcalcmove gives all monsters 12; all get processed at step 2+
+            rn2(5); // distfleeck: monmove.c:538
+            if (mon._pet) {
+                dog_goal_rng(mon);
+            }
+        }
+    }
+
+    // mcalcmove: rn2(NORMAL_SPEED=12) per monster (always runs)
     for (let i = 0; i < monCount; i++) rn2(12);
 
     // maybe_generate_rnd_mon

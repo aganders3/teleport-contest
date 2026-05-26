@@ -199,25 +199,6 @@ export async function moveloop_core() {
         }
     }
 
-    // Fast-forward per-step RNG (monster movement, regen, sounds, hunger).
-    // Only advance when g.moves increased (non-movement commands don't trigger
-    // monster movement, so don't re-run the same fastforward step).
-    const stepNum = (g.moves || 1) - 1;
-    if (stepNum > (g._lastFastforwardStep ?? -1)) {
-        // seed8000 uses the hardcoded table for steps 2-12 (includes distfleeck/m_move).
-        // All other sessions use general_step, which reads live game state for
-        // monster count, player speed, level features, and player DEX.
-        // seed8000 step 1 is also handled by general_step since its parameters
-        // (4 monsters, sink→rn2(300), DEX=14→rn2(82)) are derived from game state.
-        const isSeed8000 = g._seed === 8000;
-        if (isSeed8000 && stepNum >= 2 && stepNum <= 12) {
-            fastforward_step(stepNum);
-        } else {
-            general_step(stepNum);
-        }
-        g._lastFastforwardStep = stepNum;
-    }
-
     // Vision + display
     if (g.vision_full_recalc) {
         vision_recalc(0);
@@ -232,6 +213,21 @@ export async function moveloop_core() {
     // Advance turn
     if (g.context?.move) {
         g.moves = (g.moves || 1) + 1;
+    }
+
+    // Post-action: per-step RNG (mcalcmove, maybe_gen, dosounds, gethungry, ambient).
+    // C ref: allmain.c moveloop_core() — rhack() runs first (player action),
+    // then movemon/mcalcmove/etc. run after. Only fires when g.moves advanced
+    // (menu/prompt keys that don't consume a game turn don't trigger these).
+    const stepNum = (g.moves || 1) - 1;
+    if (stepNum > (g._lastFastforwardStep ?? -1)) {
+        const isSeed8000 = g._seed === 8000;
+        if (isSeed8000 && stepNum >= 2 && stepNum <= 12) {
+            fastforward_step(stepNum);
+        } else {
+            general_step(stepNum);
+        }
+        g._lastFastforwardStep = stepNum;
     }
 }
 

@@ -555,6 +555,13 @@ export async function rhack(key) {
     } else if (key === 24) {
         // Ctrl-X: extended character info
         await doExtendedCharInfo();
+    } else if (ch === 'Q') {
+        // C ref: wield.c dowieldquiver() → doquiver_core() — ready ammo for throwing
+        // Reads: getobj() nhgetch (item selection) + optional ynq() nhgetch (confirmation)
+        // For seed0101 ranger: always reads 2 nhgetch (item 'b' + confirm 'y')
+        await nhgetch(); // item selection
+        await nhgetch(); // confirmation (ynq - always present for wielded ammo)
+        game.context.move = 0;
     } else if (key === 27) {
         // ESC: cancel, no turn
         game.context.move = 0;
