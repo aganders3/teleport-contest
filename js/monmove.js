@@ -50,24 +50,33 @@ function ambient() {
     rn2(40 + dex * 3);
 }
 
-// C ref: dogmove.c dog_goal() — pet scans nearby objects for apport
-// For each object in adjacent cells: obj_resists rn2(100) + apport check rn2(8)
-// dog_goal returns a direction or 0 to indicate no move needed
+// C ref: dogmove.c dog_goal() — pet scans nearby objects for apport, then decides approach
+// Sequence: for each adjacent object: obj_resists rn2(100) + apport rn2(8)
+//           then if udist > 1 and player in room: approach check rn2(4) [dogmove.c:575]
 function dog_goal_rng(mon) {
     const g = game;
-    if (!g.level?.objects) return;
     const mx = mon.mx, my = mon.my;
-    // Scan 9 cells: dog's cell + 8 neighbors (C iterates mx-1..mx+1, my-1..my+1)
-    for (let nx = mx - 1; nx <= mx + 1; nx++) {
-        for (let ny = my - 1; ny <= my + 1; ny++) {
-            const key = `${nx},${ny}`;
-            const objs = g.level.objects[key];
-            if (!objs) continue;
-            for (const obj of objs) {
-                rn2(100); // obj_resists: zap.c:1469
-                rn2(8);   // apport check: dogmove.c:554
+    // Scan 9 cells: dog's cell + 8 neighbors (C: mx-1..mx+1, my-1..my+1)
+    if (g.level?.objects) {
+        for (let nx = mx - 1; nx <= mx + 1; nx++) {
+            for (let ny = my - 1; ny <= my + 1; ny++) {
+                const key = `${nx},${ny}`;
+                const objs = g.level.objects[key];
+                if (!objs) continue;
+                for (const obj of objs) {
+                    rn2(100); // obj_resists: zap.c:1469
+                    rn2(8);   // apport check: dogmove.c:554
+                }
             }
         }
+    }
+    // C ref: dogmove.c:575 — if udist > 1: IS_ROOM check then rn2(4) approach decision
+    // When player is in a room (typical) and not adjacent to dog: rn2(4) fires.
+    // Chebyshev distance: max(|dx|, |dy|)
+    const ux = g.u?.ux, uy = g.u?.uy;
+    if (ux != null) {
+        const udist = Math.max(Math.abs(ux - mx), Math.abs(uy - my));
+        if (udist > 1) rn2(4); // approach-player decision: dogmove.c:575
     }
 }
 
