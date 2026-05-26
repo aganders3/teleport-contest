@@ -3500,6 +3500,24 @@ export function makedog() {
         }
     }
 
+    // Determine pet name (C ref: dog.c makedog())
+    // Priority: nethackrc dogname/catname/horsename → role-based default → unnamed
+    let petName = '';
+    if (petKind === 'dog') {
+        if (g.flags?.dogname) petName = g.flags.dogname;
+        else {
+            const roleName = g.urole_data?.name?.m || '';
+            if (roleName === 'Caveman' || roleName === 'Cavewoman') petName = 'Slasher';
+            else if (roleName === 'Samurai') petName = 'Hachi';
+            else if (roleName === 'Barbarian') petName = 'Idefix';
+            else if (roleName === 'Ranger') petName = 'Sirius';
+        }
+    } else if (petKind === 'cat') {
+        if (g.flags?.catname) petName = g.flags.catname;
+    } else if (petKind === 'pony') {
+        if (g.flags?.horsename) petName = g.flags.horsename;
+    }
+
     // Store pet in level monster list for rendering
     if (petPos && g.level) {
         const petChars = { cat: 'f', dog: 'd', pony: 'u' };
@@ -3509,7 +3527,7 @@ export function makedog() {
             mx: petPos.x, my: petPos.y, m_id,
             _petChar: petChars[petKind] || 'd',
             _mndx: petMndx[petKind] ?? 16,
-            _petKind: petKind, _pet: true,
+            _petKind: petKind, _pet: true, _petName: petName,
         };
         if (!g.level.monsters) g.level.monsters = [];
         g.level.monsters.unshift(mtmp); // dog.c adds to head of fmon list

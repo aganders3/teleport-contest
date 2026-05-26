@@ -585,10 +585,27 @@ async function domove(dx, dy) {
         return;
     }
 
-    // Move the hero
     const oldx = u.ux, oldy = u.uy;
     u.ux0 = oldx;
     u.uy0 = oldy;
+
+    // C ref: uhitm.c u_swap_with() — moving into a pet's square swaps places
+    const petAtTarget = (game.level?.monsters || []).find(m => m._pet && m.mx === newx && m.my === newy);
+    if (petAtTarget) {
+        u.ux = newx; u.uy = newy;
+        petAtTarget.mx = oldx; petAtTarget.my = oldy;
+        newsym(oldx, oldy);
+        vision_recalc(1);
+        newsym(newx, newy);
+        // C ref: dog.c monnam() — named pets: just the name; unnamed: "the little dog" etc.
+        const unnamedName = { dog: 'the little dog', cat: 'the kitten', pony: 'the pony' };
+        const monName = petAtTarget._petName || unnamedName[petAtTarget._petKind] || 'the pet';
+        await pline(`You swap places with ${monName}.`);
+        game.context.move = 1;
+        return;
+    }
+
+    // Move the hero
     u.ux = newx;
     u.uy = newy;
 
