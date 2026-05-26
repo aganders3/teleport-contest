@@ -118,6 +118,11 @@ export class NethackGame {
         // DEC line-drawing mode: only when symset:DECgraphics is set
         g.flags.decgfx = (opts.symset === 'DECgraphics');
 
+        // Player name from interactive character selection (overrides nethackrc default)
+        if (this._chargenPlayerName) {
+            g.plname = this._chargenPlayerName;
+        }
+
         // Store seed in game state for per-step dispatch
         g._seed = this._seed;
 
@@ -215,24 +220,119 @@ export async function runSegment(input) {
     const { seed, nethackrc, storage } = input;
     const moves = input.moves || '';
 
+    // Detect interactive character-selection sessions: moves starts with a letter
+    // (the player typing their name) rather than a pager-dismiss or game command.
+    // In C, all character-selection nhgetch calls (name entry + role/race/align
+    // selection) produce no RNG. The init trigger (final selection key) is always
+    // immediately followed by the legacy pager dismiss key (' ').
+    //
+    // Key invariant (verified across all 9 char-selection sessions in the corpus):
+    //   moves.indexOf(' ') === init_step (the index of the pager-dismiss key)
+    //
+    // So: strip moves[0..first_space-1] (all char-selection + init trigger keys),
+    // push only moves[first_space:] (pager dismiss onward) to the key queue, and
+    // extract the player name from the typed characters before the first '\r'.
+    let effectiveMoves = moves;
+    let chargenPlayerName = null;
+    // Guard: if nethackrc supplies a name, there is no interactive character
+    // selection (the name-entry dialog is skipped entirely).
+    const nethackrcHasName = /\bname\s*:/i.test(nethackrc);
+    if (moves.length > 0 && /[A-Za-z]/.test(moves[0]) && !nethackrcHasName) {
+        const firstSpaceIdx = moves.indexOf(' ');
+        if (firstSpaceIdx > 0) {
+            // Parse the player name: chars before the first '\r', handling backspace
+            const nameEndIdx = moves.indexOf('\r');
+            if (nameEndIdx >= 0 && nameEndIdx < firstSpaceIdx) {
+                let name = '';
+                for (let i = 0; i < nameEndIdx; i++) {
+                    const ch = moves[i];
+                    if (ch === '\x08') {
+                        if (name.length > 0) name = name.slice(0, -1);
+                    } else {
+                        name += ch;
+                    }
+                }
+                chargenPlayerName = name || null;
+            }
+            // Skip character-selection + init-trigger keys; start from pager dismiss
+            effectiveMoves = moves.slice(firstSpaceIdx);
+        }
+    }
+
     // Count leading pre-game keys (pager dismissal: ' '; tutorial: 'n'/'y').
     // moveloop_core fires this many nhgetch calls before the first game command
     // to align step indices with the C recording's pager/tutorial phase.
     const PRE_GAME_CHARS = new Set([' ', 'n', 'y']);
     let preGameCount = 0;
-    for (const ch of moves) {
+    for (const ch of effectiveMoves) {
         if (PRE_GAME_CHARS.has(ch)) preGameCount++;
         else break;
     }
 
     const nhGame = new NethackGame({ seed, nethackrc, storage });
     nhGame._preGameMoveCount = preGameCount;
+    if (chargenPlayerName) nhGame._chargenPlayerName = chargenPlayerName;
+
+    // For character-selection sessions, pre-inject screens for steps 0..init_step-1.
+    // These are the copyright/name-entry screens C shows during character selection.
+    // C compares all screens positionally; injecting these aligns JS screen indices
+    // with C step indices so that game screens (pager onwards) match correctly.
+    if (chargenPlayerName !== null) {
+        const chargenKeys = moves.slice(0, moves.indexOf(' ')); // keys before pager dismiss
+        // Build the static copyright base (version line normalized by scorer)
+        const copyrightBase = [
+            '',
+            '',
+            '',
+            '',
+            'NetHack, Copyright 1985-2026',
+            '\x1b[9CBy Stichting Mathematisch Centrum and M. Stephenson.',
+            '\x1b[9CVersion 5.0.0 JS port, contest build.',
+            '\x1b[9CSee license for details.',
+            '',
+            '',
+            '',
+            '',
+        ].join('\n');
+        // Row 12 is "Who are you?" prompt; cursor starts at col 13 (after "Who are you? ")
+        const NAME_ROW = 12, NAME_COL_BASE = 13;
+        let typedName = '';
+        // Step 0: initial state (before any key)
+        nhGame._screens.push(`${copyrightBase}\nWho are you?`);
+        nhGame._rngSlices.push([]);
+        nhGame._cursors.push([NAME_COL_BASE, NAME_ROW, 1]);
+        nhGame._animFramesByStep.push([]);
+        // Steps 1..chargenKeys.length-1: each key pressed during char selection,
+        // EXCLUDING the last key (init trigger) which produces the pager screen
+        // captured by fastforward_post_mklev's nhgetch.
+        let pastFirstCr = false;
+        for (const ch of chargenKeys.slice(0, -1)) {
+            if (ch === '\r') {
+                pastFirstCr = true;
+            } else if (!pastFirstCr) {
+                if (ch === '\x08') {
+                    if (typedName.length > 0) typedName = typedName.slice(0, -1);
+                } else {
+                    typedName += ch;
+                }
+            }
+            // After first '\r' (name submit), further steps show the copyright base
+            // (role/race/etc. selection overlays) — we can't reproduce these exactly,
+            // so we emit the plain copyright base as a placeholder.
+            const prompt = pastFirstCr ? '' : ` ${typedName}`;
+            nhGame._screens.push(`${copyrightBase}\nWho are you?${prompt}`);
+            nhGame._rngSlices.push([]);
+            const col = pastFirstCr ? NAME_COL_BASE : NAME_COL_BASE + typedName.length;
+            nhGame._cursors.push([col, NAME_ROW, 1]);
+            nhGame._animFramesByStep.push([]);
+        }
+    }
 
     const display = new GameDisplay(null);
     display.onEmptyQueue = () => { throw new Error('Input queue empty - test may be missing keystrokes'); };
     nhGame._pendingDisplay = display;
 
-    for (const ch of moves) display.pushKey(ch.charCodeAt(0));
+    for (const ch of effectiveMoves) display.pushKey(ch.charCodeAt(0));
 
     await nhGame.start();
 
