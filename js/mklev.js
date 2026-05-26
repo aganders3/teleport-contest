@@ -2875,17 +2875,17 @@ function mktrap_victim(trap) {
     const lvl = game.u?.uz?.dlevel ?? 1;
     const kind = trap.ttyp;
     const x = trap.tx, y = trap.ty;
-    // Object based on trap type
+    // Object based on trap type — placed at trap location
     switch (kind) {
-    case ARROW_TRAP: mksobj(349, true, false); break; // ARROW
-    case DART_TRAP: mksobj(353, true, false); break; // DART
-    case ROCKTRAP: mksobj(ROCK, true, false); break;
+    case ARROW_TRAP: mksobj_at(ARROW, x, y, true, false); break;
+    case DART_TRAP: mksobj_at(DART, x, y, true, false); break;
+    case ROCKTRAP: mksobj_at(ROCK, x, y, true, false); break;
     default: break;
     }
-    // Random items on victim
+    // Random items on victim — placed at trap location
     do {
         const cls = [WEAPON_CLASS, TOOL_CLASS, FOOD_CLASS, GEM_CLASS][rn2(4)];
-        const otmp = mkobj(cls, false);
+        const otmp = mkobj_at(cls, x, y, false);
         curse(otmp);
     } while (!rn2(5));
     // Victim type

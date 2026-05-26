@@ -171,13 +171,19 @@ export async function moveloop_core() {
             for (let i = 0; i < extraNhgetch; i++) {
                 const disp = game?.nhDisplay;
                 if (i === 0) {
-                    // C ref: allmain.c Hello() + pline — welcome message is at row 0,
-                    // then "--More--" appears at row 1 before nhgetch dismisses the pager.
+                    // C ref: allmain.c Hello() + pline — "--More--" placement depends on
+                    // message length. If msg + "--More--" fits in 80 cols, append to row 0;
+                    // otherwise wrap to row 1 (standard NetHack terminal pager behavior).
                     const parts = (game._screen_output || '').split('\n');
-                    parts[1] = '--More--';
+                    const msg = parts[0] || '';
+                    if (msg.length + 8 <= 80) {
+                        parts[0] = msg + '--More--';
+                        if (disp) disp.setCursor(parts[0].length, 0);
+                    } else {
+                        parts[1] = '--More--';
+                        if (disp) disp.setCursor(8, 1);
+                    }
                     game._screen_output = parts.join('\n');
-                    // Cursor at end of "--More--" (col 8, row 1)
-                    if (disp) disp.setCursor(8, 1);
                 } else if (i === 1) {
                     // Tutorial query overlay: text at col 21 rows 0-6, map behind rows 7+.
                     // C ref: allmain.c com_pager("tutorial") — shown before first move.
