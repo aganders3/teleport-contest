@@ -118,6 +118,14 @@ export class NethackGame {
         // DEC line-drawing mode: only when symset:DECgraphics is set
         g.flags.decgfx = (opts.symset === 'DECgraphics');
 
+        // Store seed in game state for per-step dispatch
+        g._seed = this._seed;
+
+        // Set Fast intrinsic flag for roles that start with HFast at level 1.
+        // C ref: attrib.c sam_abil[] and mon_abil[] both have { 1, &HFast, "" }.
+        const roleName = roleData?.name?.m || '';
+        g.u.hfast = (roleName === 'Samurai' || roleName === 'Monk') ? 1 : 0;
+
         // Initialize PRNG
         initRng(this._seed);
         enableRngLog();

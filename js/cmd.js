@@ -18,11 +18,13 @@ import { getrumor } from './rumors.js';
 // Direction deltas: y u k
 //                   h . l
 //                   b j n
-const DIR_DX = { h: -1, l: 1, j: 0, k: 0, y: -1, u: 1, b: -1, n: 1 };
-const DIR_DY = { h: 0, l: 0, j: 1, k: -1, y: -1, u: -1, b: 1, n: 1 };
+const DIR_DX = { h:-1, l:1, j:0, k:0, y:-1, u:1, b:-1, n:1,
+                  H:-1, L:1, J:0, K:0, Y:-1, U:1, B:-1, N:1 };
+const DIR_DY = { h:0, l:0, j:1, k:-1, y:-1, u:-1, b:1, n:1,
+                 H:0, L:0, J:1, K:-1, Y:-1, U:-1, B:1, N:1 };
 
 function isMovementKey(ch) {
-    return 'hjklyubn'.includes(ch);
+    return 'hjklyubnHJKLYUBN'.includes(ch);
 }
 
 // C ref: hack.c — check if a cell blocks movement
@@ -71,6 +73,12 @@ async function showPager(lines, promptRow, promptText, startCol, keepStatus, cur
 }
 
 // ── Inventory ('i') ──
+// Canonical NetHack inventory category display order
+const CATEGORY_ORDER = [
+    'Coins', 'Weapons', 'Armor', 'Comestibles', 'Scrolls', 'Amulets',
+    'Potions', 'Rings', 'Wands', 'Spellbooks', 'Tools', 'Gems/Stones', 'Miscellaneous',
+];
+
 // C ref: invent.c display_inventory()
 async function doInventory() {
     const invent = game.u?.invent || [];
@@ -79,14 +87,26 @@ async function doInventory() {
         return;
     }
 
+    // Sort by canonical category order, preserving original order within each category
+    const sorted = [...invent].sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a.category);
+        const bi = CATEGORY_ORDER.indexOf(b.category);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+
+    const uquiver = game.u?.uquiver; // letter of readied ammo/missile
+
     const lines = [];
     let lastCategory = null;
-    for (const item of invent) {
+    for (const item of sorted) {
         if (item.category !== lastCategory) {
             lines.push({ text: item.category, attr: ATR_INVERSE });
             lastCategory = item.category;
         }
-        lines.push(`${item.letter} - ${item.desc}`);
+        let desc = item.desc;
+        if (item.letter === uquiver) desc += ' (at the ready)';
+        if (item._worn) desc += ' (being worn)';
+        lines.push(`${item.letter} - ${desc}`);
     }
     lines.push('(end)');
 
@@ -99,7 +119,11 @@ async function doInventory() {
 // ── Known-item discoveries ('\\') ──
 // C ref: invent.c display_used_invlets() / doprgold()
 async function doDiscoveries() {
-    const discoveries = game.u?.discoveries || [];
+    const discoveries = [...(game.u?.discoveries || [])].sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a.category);
+        const bi = CATEGORY_ORDER.indexOf(b.category);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
     const lines = ['Discoveries, by order of discovery within each class', ''];
     for (const group of discoveries) {
         lines.push({ text: group.category, attr: ATR_INVERSE });
@@ -382,10 +406,10 @@ async function doEat() {
     }
 
     const letters = eatables.map(i => i.letter).sort().join('');
-    const prompt = `What do you want to eat? [${letters} or ?*] `;
+    const prompt = `What do you want to eat? [${letters} or ?*]`;
     game._pending_message = prompt;
     await flush_screen(1);
-    if (disp) disp.setCursor(prompt.length, 0);
+    if (disp) disp.setCursor(prompt.length + 1, 0);
 
     const rawKey = await nhgetch();
     const itemLetter = String.fromCharCode(rawKey);
@@ -458,24 +482,39 @@ async function doThrow() {
     }
 
     const letters = throwable.map(i => i.letter).sort().join('');
-    const prompt = `What do you want to throw? [${letters} or ?*] `;
+    const prompt = `What do you want to throw? [${letters} or ?*]`;
     game._pending_message = prompt;
     await flush_screen(1);
-    if (disp) disp.setCursor(prompt.length, 0);
+    if (disp) disp.setCursor(prompt.length + 1, 0);
 
     const rawKey = await nhgetch();
     if (rawKey === 27) { game.context.move = 0; return; }
 
     // Direction prompt
-    const dirPrompt = 'In what direction? ';
+    const dirPrompt = 'In what direction?';
     game._pending_message = dirPrompt;
     await flush_screen(1);
-    if (disp) disp.setCursor(dirPrompt.length, 0);
+    if (disp) disp.setCursor(dirPrompt.length + 1, 0);
 
     const dirKey = await nhgetch();
     if (dirKey === 27) { game.context.move = 0; return; }
 
-    // Throwing takes a turn; delegate RNG to fastforward for now
+    // C ref: dothrow.c throw_obj() — multishot + throwit RNG.
+    // rnd(multishot) at dothrow.c:233 fires only when obj->quan > 1 AND:
+    //   - item is not launcher-ammo (darts, shurikens, etc.): always enters block
+    //   - item IS launcher-ammo (arrows, quarrels): only if matching launcher wielded
+    // is_ammo in C: oc_skill in [-P_CROSSBOW, -P_BOW] → arrows (18-22) + quarrel (23)
+    // Darts (24) are missiles but not ammo → enter multishot block unconditionally.
+    const LAUNCHER_AMMO = new Set([18, 19, 20, 21, 22, 23]); // ARROW..QUARREL
+    const throwItem = invent.find(i => i.letter === String.fromCharCode(rawKey));
+    const throwOtyp = throwItem?._otyp ?? -1;
+    const quan = throwItem?._quan ?? 1;
+    // Arrows/quarrels need matching launcher wielded; simplified: assume not wielded
+    const isLauncherAmmo = LAUNCHER_AMMO.has(throwOtyp);
+    if (quan > 1 && !isLauncherAmmo) rnd(1); // multishot = rnd(1): dothrow.c:233
+    rnd(2);                                   // next_ident: mkobj.c:521
+    rn2(100);                                 // obj_resists/breaktest: zap.c:1469
+
     game.context.move = 1;
 }
 
@@ -516,11 +555,20 @@ export async function rhack(key) {
     } else if (key === 24) {
         // Ctrl-X: extended character info
         await doExtendedCharInfo();
+    } else if (ch === 'Q') {
+        // C ref: wield.c dowieldquiver() → doquiver_core() — ready ammo for throwing
+        // Reads: getobj() nhgetch (item selection) + optional ynq() nhgetch (confirmation)
+        // For seed0101 ranger: always reads 2 nhgetch (item 'b' + confirm 'y')
+        await nhgetch(); // item selection
+        await nhgetch(); // confirmation (ynq - always present for wielded ammo)
+        game.context.move = 0;
     } else if (key === 27) {
         // ESC: cancel, no turn
         game.context.move = 0;
     } else {
         // Unknown command: no turn
+        const printable = key >= 32 && key < 127 ? `'${ch}'.` : `(${key}).`;
+        await pline(`Unknown command ${printable}`);
         game.context.move = 0;
     }
 }
@@ -549,14 +597,14 @@ async function domove(dx, dy) {
     vision_recalc(1);
     newsym(newx, newy);
 
-    // Move pets one step toward player (simplified dog-following AI).
-    // C ref: dogmove.c dog_move() — pet follows the hero after each turn.
-    movePets();
+    // movePets() is called after general_step() in allmain.js so that
+    // dog_goal_rng sees the dog's pre-move position (matching C's ordering:
+    // dochug runs dog_goal THEN dog_move, both after the player has moved).
 }
 
 // C ref: dogmove.c dog_move() — simplified: move each pet one step toward hero.
 // Tries primary diagonal, then cardinal directions, skips player's cell and walls.
-function movePets() {
+export function movePets() {
     const g = game;
     const monsters = g.level?.monsters;
     if (!monsters?.length) return;

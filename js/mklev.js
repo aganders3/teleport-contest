@@ -9,7 +9,7 @@ import { RUMORS_B64, ENGRAVE_B64 } from './dat_inline.js';
 import { game } from './gstate.js';
 import { GameMap } from './game.js';
 import { rn2, rnd, rn1, d, rnz, rne } from './rng.js';
-import { MONS, SPECIAL_PM, MON_FLAGS } from './mondata.js';
+import { MONS, SPECIAL_PM, MON_FLAGS, MON_NAMES } from './mondata.js';
 import { init_rect, rnd_rect, get_rect, split_rects } from './rect.js';
 import { depth as depth_of_level } from './hacklib.js';
 import {
@@ -165,17 +165,26 @@ const PICK_AXE            = 259;
 // Food (otyp 264-296)
 const TRIPE_RATION        = 264;
 const CORPSE              = 265;
+const EGG                 = 266;
 const KELP_FROND          = 275;
+const EUCALYPTUS_LEAF     = 276;
 const APPLE               = 277;
 const ORANGE              = 278;
+const PEAR                = 279;
+const MELON               = 280;
+const BANANA              = 281;
 const CARROT              = 282;
 const SPRIG_OF_WOLFSBANE  = 283;
 const CLOVE_OF_GARLIC     = 284;
+const SLIME_MOLD          = 285;
 const CREAM_PIE           = 287;
+const CANDY_BAR           = 288;
 const FORTUNE_COOKIE      = 289;
+const PANCAKE             = 290;
 const LEMBAS_WAFER        = 291;
 const CRAM_RATION         = 292;
 const FOOD_RATION         = 293;
+const TIN                 = 296;
 // Potions (otyp 297-322)
 const POT_SPEED           = 302;
 const POT_HEALING         = 307;
@@ -513,10 +522,9 @@ function mksobj_init(otmp, artif) {
             }
         } else if (otmp._food_type === 'TIN') {
             if (!rn2(6)) {
-                // spinach — no rndmonnum
+                otmp._tin_spinach = true; // spinach tin
             } else {
-                // flesh tin: rndmonnum() for monster + set_tin_variety
-                rndmonnum();
+                otmp._tin_pm = rndmonnum(); // flesh tin: record monster
                 rn2(15); // set_tin_variety: rn2(15) for preparation
             }
             blessorcurse(otmp, 10);
@@ -527,9 +535,8 @@ function mksobj_init(otmp, artif) {
             rn2(11); // assign_candy_wrapper: rn2(SIZE(candy_wrappers)-1) = rn2(12-1)
         }
         // Generic food quantity check (skipped for CORPSE, MEAT_RING, KELP_FROND, puddings)
-        // Most food types reach here
         if (otmp._food_type !== 'CORPSE' && otmp._food_type !== 'MEAT_RING') {
-            rn2(6); // quan=2 if !rn2(6)
+            otmp.quan = rn2(6) ? 1 : 2;
         }
         break;
     }
@@ -598,15 +605,42 @@ function mksobj_init(otmp, artif) {
     }
 }
 
-// Food type classification from rnd(1000) probability result
-// Returns string category for mksobj_init dispatch
-function food_type_from_prob(p) {
-    // Cumulative probabilities for FOOD_CLASS objects (total=1000):
-    // tripe_ration(140), egg(85)=225, eucalyptus-garlic(87)=312, slime_mold(75)=387,
-    // cream_pie(25)=412, candy_bar(13)=425, fortune_cookie-food_ration(500)=925, tin(75)=1000
-    if (p <= 225) return p <= 140 ? 'GENERIC' : 'EGG';
-    if (p <= 925) return p <= 425 && p > 412 ? 'CANDY_BAR' : 'GENERIC';
-    return 'TIN';
+// Map rnd(1000) result to actual food otyp (cumulative probabilities from objects.h)
+// Cumulative: tripe(140), egg(225), eucalyptus(228), apple(243), orange(253),
+// pear(263), melon(273), banana(283), carrot(298), wolfsbane(305), garlic(312),
+// slime_mold(387), cream_pie(412), candy_bar(425), fortune_cookie(480),
+// pancake(505), lembas(525), cram(545), food_ration(925), tin(1000)
+function food_prob_to_otyp(p) {
+    if (p <= 140) return TRIPE_RATION;
+    if (p <= 225) return EGG;
+    if (p <= 228) return EUCALYPTUS_LEAF;
+    if (p <= 243) return APPLE;
+    if (p <= 253) return ORANGE;
+    if (p <= 263) return PEAR;
+    if (p <= 273) return MELON;
+    if (p <= 283) return BANANA;
+    if (p <= 298) return CARROT;
+    if (p <= 305) return SPRIG_OF_WOLFSBANE;
+    if (p <= 312) return CLOVE_OF_GARLIC;
+    if (p <= 387) return SLIME_MOLD;
+    if (p <= 412) return CREAM_PIE;
+    if (p <= 425) return CANDY_BAR;
+    if (p <= 480) return FORTUNE_COOKIE;
+    if (p <= 505) return PANCAKE;
+    if (p <= 525) return LEMBAS_WAFER;
+    if (p <= 545) return CRAM_RATION;
+    if (p <= 925) return FOOD_RATION;
+    return TIN;
+}
+
+// Derive mksobj_init dispatch type string from actual food otyp
+function food_otyp_to_type(otyp) {
+    if (otyp === EGG) return 'EGG';
+    if (otyp === TIN) return 'TIN';
+    if (otyp === KELP_FROND) return 'KELP_FROND';
+    if (otyp === CANDY_BAR) return 'CANDY_BAR';
+    if (otyp === CORPSE) return 'CORPSE';
+    return 'GENERIC';
 }
 
 // mkobjprobs: class selection probabilities for RANDOM_CLASS mkobj
@@ -675,7 +709,8 @@ function mksobj_from_class(oclass, typProb, init_forced, artif) {
     };
     // Annotate type-specific metadata for mksobj_init dispatch
     if (oclass === FOOD_CLASS) {
-        otmp._food_type = food_type_from_prob(typProb);
+        otmp.otyp = food_prob_to_otyp(typProb);
+        otmp._food_type = food_otyp_to_type(otmp.otyp);
     } else if (oclass === GEM_CLASS) {
         otmp._gem_type = 'GENERIC'; // simplified: treat all gems as generic
     } else if (oclass === WEAPON_CLASS) {
@@ -749,6 +784,7 @@ function mksobj_at(otyp, x, y, init, artif) {
     if (game.level && x > 0 && y >= 0 && x < COLNO && y < ROWNO) {
         if (!game.level.floor_items) game.level.floor_items = new Map();
         game.level.floor_items.set(`${x},${y}`, obj);
+        place_object(obj, x, y);
     }
     return obj;
 }
@@ -758,6 +794,7 @@ function mkobj_at(oclass, x, y, artif) {
     if (game.level && x > 0 && y >= 0 && x < COLNO && y < ROWNO) {
         if (!game.level.floor_items) game.level.floor_items = new Map();
         game.level.floor_items.set(`${x},${y}`, obj);
+        place_object(obj, x, y);
     }
     return obj;
 }
@@ -779,27 +816,39 @@ function mkgold(amount, x, y) {
         const mul = rnd(Math.trunc(30 / Math.max(12 - depthVal, 2)));
         amount = 1 + rnd(level_difficulty() + 2) * mul;
     }
-    // Check if gold already exists at (x,y) — if so, no new object (no next_ident)
     const g = game;
     if (!g.level) { next_ident(); return; }
-    if (!g.level._gold_cells) g.level._gold_cells = new Map();
+    // C uses g_at(x,y) to find existing gold — check game.level.objects for GOLD_PIECE
     const key = `${x},${y}`;
-    if (g.level._gold_cells.has(key)) {
-        // Existing gold: just increment quan, no next_ident call
-        g.level._gold_cells.set(key, (g.level._gold_cells.get(key) || 0) + amount);
+    const existing = g.level.objects?.[key]?.find(o => o._otyp === GOLD_PIECE || o.otyp === GOLD_PIECE);
+    if (existing) {
+        existing.quan += amount;
     } else {
-        // New gold: mksobj_at(GOLD_PIECE) calls next_ident
-        next_ident();
-        g.level._gold_cells.set(key, amount);
+        // mksobj_at calls next_ident() + place_object() — COIN_CLASS mksobj_init is a no-op
+        const gold = mksobj_at(GOLD_PIECE, x, y, true, false);
+        if (gold) { gold.quan = amount; gold._otyp = GOLD_PIECE; }
     }
 }
 
-function place_object(otmp, x, y) { /* stub */ }
+function place_object(otmp, x, y) {
+    if (!otmp || !game.level) return;
+    otmp.ox = x; otmp.oy = y;
+    if (!game.level.objects) game.level.objects = {};
+    const key = `${x},${y}`;
+    if (!game.level.objects[key]) game.level.objects[key] = [];
+    game.level.objects[key].push(otmp);
+    if (!game.level.allObjects) game.level.allObjects = [];
+    game.level.allObjects.push(otmp);
+}
 function dealloc_obj(otmp) { /* stub */ }
 function curse(otmp) { if (otmp) otmp.cursed = true; }
 function weight(otmp) { return otmp?.owt || 1; }
 function add_to_container(container, otmp) { /* stub */ }
-function sobj_at(otyp, x, y) { return false; }
+function sobj_at(otyp, x, y) {
+    const key = `${x},${y}`;
+    const objs = game.level?.objects?.[key];
+    return objs ? objs.some(o => o._otyp === otyp) : false;
+}
 
 // set_corpsenm stub
 function set_corpsenm(otmp, pm) { /* stub */ }
@@ -841,8 +890,85 @@ const G_UNIQ   = 0x4000;
 const M2_MALE   = 0x10000;
 const M2_FEMALE = 0x20000;
 const M2_NEUTER = 0x40000;
-// S_ sym id for special newmonhp handling
-const S_DRAGON = 30;
+// M2 flags stored in MONS[][5] (combined M1+M2 minus gender bits)
+const M2_ELF    = 0x10;
+const M2_DWARF  = 0x20;
+const M2_ORC    = 0x80;
+const M2_DEMON  = 0x100;
+const M2_MERC   = 0x200;
+const M2_LORD   = 0x400;
+const M2_PRINCE = 0x800;
+const M2_NASTY  = 0x2000000;
+const M2_STRONG = 0x4000000;
+const M1_HUMANOID = 0x20000; // from mflags1, stored in MONS[][5]
+// S_ sym ids
+const S_DRAGON   = 30;
+const S_GIANT    = 34;
+const S_KOP      = 37;
+const S_MUMMY    = 39;
+const S_OGRE     = 41;
+const S_TROLL    = 46;
+const S_WRAITH   = 49;
+const S_ZOMBIE   = 52;
+const S_HUMAN    = 53;
+const S_GHOST    = 54;
+const S_GOLEM    = 55;
+const S_DEMON    = 56;
+const S_LIZARD   = 58;
+const S_KOBOLD   = 11;
+const S_ORC      = 15;
+const S_CENTAUR  = 29;
+const S_ANGEL    = 27;
+const S_HUMANOID = 8;
+// PM_ indices needed for m_initweap
+const PM_ETTIN         = 178;
+const PM_WATCHMAN      = 288;
+const PM_SOLDIER       = 283;
+const PM_SERGEANT      = 284;
+const PM_LIEUTENANT    = 286;
+const PM_CAPTAIN       = 287;
+const PM_WATCH_CAPTAIN = 289;
+const PM_ELVEN_MONARCH = 275;
+const PM_HOBBIT        = 45;
+const PM_NINJA         = 389;
+const PM_STUDENT       = 379;
+const PM_ATTENDANT     = 383;
+const PM_ABBOT         = 385;
+const PM_ACOLYTE       = 386;
+const PM_GUIDE         = 391;
+const PM_APPRENTICE    = 393;
+const PM_CHIEFTAIN     = 380;
+const PM_PAGE          = 384;
+const PM_ROSHI         = 390;
+const PM_WARRIOR       = 392;
+const PM_HUNTER        = 387;
+const PM_THUG          = 388;
+const PM_NEANDERTHAL   = 381;
+const PM_MORDOR_ORC    = 76;
+const PM_URUK_HAI      = 77;
+const PM_ORC_CAPTAIN   = 79;
+const PM_ORC_SHAMAN    = 78;
+const PM_GOBLIN        = 72;
+const PM_OGRE_LEADER   = 209;
+const PM_OGRE_TYRANT   = 210;
+const PM_BALROG        = 309;
+const PM_ORCUS         = 312;
+const PM_HORNED_DEVIL  = 298;
+const PM_DISPATER      = 314;
+const PM_YEENOGHU      = 311;
+const PM_FOREST_CENTAUR = 133;
+const PM_SALAMANDER    = 336;
+// Monsters that have AT_WEAP attack (extracted from monsters.h)
+const AT_WEAP_PM = new Set([45,46,47,48,49,50,51,61,62,63,72,73,74,75,76,77,79,124,125,127,132,133,134,169,170,172,173,174,175,176,177,178,179,180,184,185,186,187,208,209,210,225,226,227,228,229,234,235,237,254,265,266,267,268,269,270,271,272,273,274,275,276,277,278,279,281,282,283,284,286,287,288,289,290,292,293,296,298,299,301,304,307,308,309,311,312,314,322,336,338,339,340,341,342,344,345,346,347,348,349,350,351,352,353,354,355,356,357,359,360,361,362,363,364,365,366,367,369,370,373,375,376,377,378,379,380,381,382,383,384,386,387,388,389,390,391,392,393]);
+// Monsters with MS_PRIEST sound (AT_WEAP subset)
+const MS_PRIEST_PM = new Set([281, 282]);
+// Monsters with MS_GUARDIAN sound (quest guardians, AT_WEAP subset)
+const MS_GUARDIAN_PM = new Set([379,380,381,382,383,384,386,387,388,390,391,392,393]);
+// Additional otyp constants not yet defined above (needed for m_initweap / rnd_offensive_item)
+const DENTED_POT=95,HELMET=97;
+const WAN_MAGIC_MISSILE=428,WAN_FIRE=429,WAN_COLD=430,WAN_LIGHTNING=433;
+const POT_CONFUSION=299,POT_BLINDNESS=300,POT_PARALYSIS=301,POT_SLEEPING=314,POT_ACID=320;
+const SCR_EARTH=340;
 
 // C ref: makemon.c uncommon()
 function uncommon(mndx) {
@@ -912,6 +1038,357 @@ function newmonhp(mtmp) {
     mtmp.mhpmax = hp;
 }
 
+// C ref: makemon.c mongets() — create item and add to monster inventory
+function mongets(mtmp, otyp) {
+    if (!otyp) return null;
+    return mksobj(otyp, true, false);
+}
+
+// C ref: makemon.c m_initthrow() — create throwing weapon stack
+// oquan is max additional quantity (rn1(oquan,3) = rn2(oquan)+3+1 in C)
+function m_initthrow(mtmp, otyp, oquan) {
+    const otmp = mksobj(otyp, true, false);
+    // rn1(oquan, 3) = rn2(oquan) + 3 + 1... actually rn1(n,m) = rn2(n)+m+1 in NetHack
+    // but looking at makemon.c: otmp->quan = (long) rn1(oquan, 3)
+    // rn1(n,m) is defined as rn2(n) + m (wait, let me check)
+    // In hacklib.c: rn1(x,y) = rn2(x)+y — so rn1(12,3) = rn2(12)+3
+    otmp.quan = rn2(oquan) + 3;
+    return otmp;
+}
+
+// C ref: muse.c rnd_offensive_item() — pick a random offensive item for monster
+function rnd_offensive_item(mtmp) {
+    const mndx = mtmp._mndx ?? 0;
+    const sym = MONS[mndx]?.[4] ?? 0;
+    const difficulty = MONS[mndx]?.[1] ?? 0;
+    const flags = MONS[mndx]?.[5] ?? 0;
+    // is_animal: AT_WEAP monsters aren't animals, skip check
+    // mindless: zombies, mummies, golems
+    if (sym === S_ZOMBIE || sym === S_MUMMY || sym === S_GOLEM) return 0;
+    // S_GHOST or S_KOP
+    if (sym === S_GHOST || sym === S_KOP) return 0;
+    if (difficulty > 7 && !rn2(35)) return WAN_DEATH;
+    const roll = rn2(9 - (difficulty < 4 ? 1 : 0) + 4 * (difficulty > 6 ? 1 : 0));
+    switch (roll) {
+    case 0: // helmet check omitted — just fall through to case 1
+    case 1: return WAN_STRIKING;
+    case 2: return POT_ACID;
+    case 3: return POT_CONFUSION;
+    case 4: return POT_BLINDNESS;
+    case 5: return POT_SLEEPING;
+    case 6: return POT_PARALYSIS;
+    case 7: case 8: return WAN_MAGIC_MISSILE;
+    case 9: return WAN_SLEEP;
+    case 10: return WAN_FIRE;
+    case 11: return WAN_COLD;
+    case 12: return WAN_LIGHTNING;
+    }
+    return 0;
+}
+
+// C ref: makemon.c m_initweap() — equip monster with weapons/armor
+function m_initweap(mtmp) {
+    const mndx = mtmp._mndx ?? 0;
+    const sym = MONS[mndx]?.[4] ?? 0;
+    const flags = MONS[mndx]?.[5] ?? 0;
+    const m_lev = mtmp.m_lev ?? 0;
+
+    const is_merc    = (flags & M2_MERC)   !== 0;
+    const is_elf_f   = (flags & M2_ELF)    !== 0;
+    const is_dwarf_f = (flags & M2_DWARF)  !== 0;
+    const is_lord_f  = (flags & M2_LORD)   !== 0;
+    const is_prince_f= (flags & M2_PRINCE) !== 0;
+    const is_nasty   = (flags & M2_NASTY)  !== 0;
+    const is_strong  = (flags & M2_STRONG) !== 0;
+    const is_demon_f = (flags & M2_DEMON)  !== 0;
+    const is_hum     = (flags & M1_HUMANOID) !== 0;
+
+    switch (sym) {
+    case S_GIANT:
+        if (rn2(2))
+            mongets(mtmp, (mndx !== PM_ETTIN) ? BOULDER : CLUB);
+        if (mndx !== PM_ETTIN && !rn2(5))
+            mongets(mtmp, rn2(2) ? TWO_HANDED_SWORD : BATTLE_AXE);
+        break;
+
+    case S_HUMAN:
+        if (is_merc) {
+            let w1 = 0, w2 = 0;
+            if (mndx === PM_WATCHMAN || mndx === PM_SOLDIER) {
+                if (!rn2(3)) {
+                    // All weapons in PARTISAN..BEC_DE_CORBIN range are P_POLEARMS,
+                    // so the C do-while always exits on first try
+                    w1 = rn2(BEC_DE_CORBIN - PARTISAN + 1) + PARTISAN;
+                    w2 = rn2(2) ? DAGGER : KNIFE;
+                } else {
+                    w1 = rn2(2) ? SPEAR : SHORT_SWORD;
+                }
+            } else if (mndx === PM_SERGEANT) {
+                w1 = rn2(2) ? FLAIL : MACE;
+            } else if (mndx === PM_LIEUTENANT) {
+                w1 = rn2(2) ? BROADSWORD : LONG_SWORD;
+            } else if (mndx === PM_CAPTAIN || mndx === PM_WATCH_CAPTAIN) {
+                w1 = rn2(2) ? LONG_SWORD : SILVER_SABER;
+            } else {
+                if (!rn2(4)) w1 = DAGGER;
+                if (!rn2(7)) w2 = SPEAR;
+            }
+            if (w1) mongets(mtmp, w1);
+            if (!w2 && w1 !== DAGGER && !rn2(4)) w2 = KNIFE;
+            if (w2) mongets(mtmp, w2);
+        } else if (is_elf_f) {
+            if (rn2(2))
+                mongets(mtmp, rn2(2) ? ELVEN_MITHRIL_COAT : ELVEN_CLOAK);
+            if (rn2(2))
+                mongets(mtmp, ELVEN_LEATHER_HELM);
+            else if (!rn2(4))
+                mongets(mtmp, ELVEN_BOOTS);
+            if (rn2(2))
+                mongets(mtmp, ELVEN_DAGGER);
+            switch (rn2(3)) {
+            case 0:
+                if (!rn2(4)) mongets(mtmp, ELVEN_SHIELD);
+                if (rn2(3)) mongets(mtmp, ELVEN_SHORT_SWORD);
+                mongets(mtmp, ELVEN_BOW);
+                m_initthrow(mtmp, ELVEN_ARROW, 12);
+                break;
+            case 1:
+                mongets(mtmp, ELVEN_BROADSWORD);
+                if (rn2(2)) mongets(mtmp, ELVEN_SHIELD);
+                break;
+            case 2:
+                if (rn2(2)) {
+                    mongets(mtmp, ELVEN_SPEAR);
+                    mongets(mtmp, ELVEN_SHIELD);
+                }
+                break;
+            }
+            if (mndx === PM_ELVEN_MONARCH) {
+                if (rn2(3)) mongets(mtmp, PICK_AXE);
+                if (!rn2(50)) mongets(mtmp, CRYSTAL_BALL);
+            }
+        } else if (MS_PRIEST_PM.has(mndx)) {
+            const otmp = mksobj(MACE, false, false);
+            otmp.spe = rnd(3);
+            if (!rn2(2)) otmp.cursed = true;
+        } else if (mndx === PM_NINJA) {
+            mongets(mtmp, rn2(4) ? SHURIKEN : DART);
+            mongets(mtmp, rn2(4) ? SHORT_SWORD : AXE);
+        } else if (MS_GUARDIAN_PM.has(mndx)) {
+            if (mndx === PM_STUDENT || mndx === PM_ATTENDANT || mndx === PM_ABBOT ||
+                mndx === PM_ACOLYTE || mndx === PM_GUIDE   || mndx === PM_APPRENTICE) {
+                if (rn2(2)) mongets(mtmp, rn2(3) ? DAGGER : KNIFE);
+                if (rn2(5)) mongets(mtmp, rn2(3) ? LEATHER_JACKET : LEATHER_CLOAK);
+                if (rn2(3)) mongets(mtmp, rn2(3) ? LOW_BOOTS : HIGH_BOOTS);
+                if (rn2(3)) mongets(mtmp, POT_HEALING);
+            } else if (mndx === PM_CHIEFTAIN || mndx === PM_PAGE ||
+                       mndx === PM_ROSHI    || mndx === PM_WARRIOR) {
+                mongets(mtmp, rn2(3) ? LONG_SWORD : SHORT_SWORD);
+                mongets(mtmp, rn2(3) ? CHAIN_MAIL : LEATHER_ARMOR);
+                if (rn2(2)) mongets(mtmp, rn2(2) ? LOW_BOOTS : HIGH_BOOTS);
+                if (!rn2(3)) mongets(mtmp, LEATHER_CLOAK);
+                if (!rn2(3)) {
+                    mongets(mtmp, BOW);
+                    m_initthrow(mtmp, ARROW, 12);
+                }
+            } else if (mndx === PM_HUNTER) {
+                mongets(mtmp, rn2(3) ? SHORT_SWORD : DAGGER);
+                if (rn2(2)) mongets(mtmp, rn2(2) ? LEATHER_JACKET : LEATHER_ARMOR);
+                mongets(mtmp, BOW);
+                m_initthrow(mtmp, ARROW, 12);
+            } else if (mndx === PM_THUG) {
+                mongets(mtmp, CLUB);
+                mongets(mtmp, rn2(3) ? DAGGER : KNIFE);
+                if (rn2(2)) mongets(mtmp, LEATHER_GLOVES);
+                mongets(mtmp, rn2(2) ? LEATHER_JACKET : LEATHER_ARMOR);
+            } else if (mndx === PM_NEANDERTHAL) {
+                mongets(mtmp, CLUB);
+                mongets(mtmp, LEATHER_ARMOR);
+            }
+        }
+        break;
+
+    case S_ANGEL:
+        if (is_hum) {
+            const typ = rn2(3) ? LONG_SWORD : SILVER_MACE;
+            const otmp = mksobj(typ, false, false);
+            otmp.spe = rn2(4);
+            if (typ === SILVER_MACE) otmp.spe += 3;
+            const shieldTyp = (!rn2(4) || is_lord_f) ? SHIELD_OF_REFLECTION : LARGE_SHIELD;
+            mksobj(shieldTyp, false, false);
+        }
+        break;
+
+    case S_HUMANOID:
+        if (mndx === PM_HOBBIT) {
+            switch (rn2(3)) {
+            case 0: mongets(mtmp, DAGGER); break;
+            case 1: mongets(mtmp, ELVEN_DAGGER); break;
+            case 2:
+                mongets(mtmp, SLING);
+                m_initthrow(mtmp, !rn2(4) ? FLINT : ROCK, 6);
+                break;
+            }
+            if (!rn2(10)) mongets(mtmp, ELVEN_MITHRIL_COAT);
+            if (!rn2(10)) mongets(mtmp, DWARVISH_CLOAK);
+        } else if (is_dwarf_f) {
+            if (rn2(7)) mongets(mtmp, DWARVISH_CLOAK);
+            if (rn2(7)) mongets(mtmp, IRON_SHOES);
+            if (!rn2(4)) {
+                mongets(mtmp, DWARVISH_SHORT_SWORD);
+                if (rn2(2))
+                    mongets(mtmp, DWARVISH_MATTOCK);
+                else {
+                    mongets(mtmp, rn2(2) ? AXE : DWARVISH_SPEAR);
+                    mongets(mtmp, DWARVISH_ROUNDSHIELD);
+                }
+                mongets(mtmp, DWARVISH_IRON_HELM);
+                if (!rn2(3)) mongets(mtmp, DWARVISH_MITHRIL_COAT);
+            } else {
+                mongets(mtmp, !rn2(3) ? PICK_AXE : DAGGER);
+            }
+        }
+        break;
+
+    case S_KOP:
+        if (!rn2(4)) m_initthrow(mtmp, CREAM_PIE, 2);
+        if (!rn2(3)) mongets(mtmp, rn2(2) ? CLUB : RUBBER_HOSE);
+        break;
+
+    case S_ORC:
+        if (rn2(2)) mongets(mtmp, ORCISH_HELM);
+        {
+            let orc_mm = mndx;
+            if (mndx === PM_ORC_CAPTAIN) orc_mm = rn2(2) ? PM_MORDOR_ORC : PM_URUK_HAI;
+            switch (orc_mm) {
+            case PM_MORDOR_ORC:
+                if (!rn2(3)) mongets(mtmp, SCIMITAR);
+                if (!rn2(3)) mongets(mtmp, ORCISH_SHIELD);
+                if (!rn2(3)) mongets(mtmp, KNIFE);
+                if (!rn2(3)) mongets(mtmp, ORCISH_CHAIN_MAIL);
+                break;
+            case PM_URUK_HAI:
+                if (!rn2(3)) mongets(mtmp, ORCISH_CLOAK);
+                if (!rn2(3)) mongets(mtmp, ORCISH_SHORT_SWORD);
+                if (!rn2(3)) mongets(mtmp, IRON_SHOES);
+                if (!rn2(3)) {
+                    mongets(mtmp, ORCISH_BOW);
+                    m_initthrow(mtmp, ORCISH_ARROW, 12);
+                }
+                if (!rn2(3)) mongets(mtmp, URUK_HAI_SHIELD);
+                break;
+            default:
+                if (mndx !== PM_ORC_SHAMAN && rn2(2))
+                    mongets(mtmp, (mndx === PM_GOBLIN || rn2(2) === 0) ? ORCISH_DAGGER : SCIMITAR);
+            }
+        }
+        break;
+
+    case S_OGRE:
+        if (!rn2(mndx === PM_OGRE_TYRANT ? 3 : mndx === PM_OGRE_LEADER ? 6 : 12))
+            mongets(mtmp, BATTLE_AXE);
+        else
+            mongets(mtmp, CLUB);
+        break;
+
+    case S_TROLL:
+        if (!rn2(2)) {
+            switch (rn2(4)) {
+            case 0: mongets(mtmp, RANSEUR); break;
+            case 1: mongets(mtmp, PARTISAN); break;
+            case 2: mongets(mtmp, GLAIVE); break;
+            case 3: mongets(mtmp, SPETUM); break;
+            }
+        }
+        break;
+
+    case S_KOBOLD:
+        if (!rn2(4)) m_initthrow(mtmp, DART, 12);
+        break;
+
+    case S_CENTAUR:
+        if (rn2(2)) {
+            if (mndx === PM_FOREST_CENTAUR) {
+                mongets(mtmp, BOW);
+                m_initthrow(mtmp, ARROW, 12);
+            } else {
+                mongets(mtmp, CROSSBOW);
+                m_initthrow(mtmp, CROSSBOW_BOLT, 12);
+            }
+        }
+        break;
+
+    case S_WRAITH:
+        mongets(mtmp, KNIFE);
+        mongets(mtmp, LONG_SWORD);
+        break;
+
+    case S_ZOMBIE:
+        if (!rn2(4)) mongets(mtmp, LEATHER_ARMOR);
+        if (!rn2(4)) mongets(mtmp, rn2(3) ? KNIFE : SHORT_SWORD);
+        break;
+
+    case S_LIZARD:
+        if (mndx === PM_SALAMANDER)
+            mongets(mtmp, rn2(7) ? SPEAR : rn2(3) ? TRIDENT : STILETTO);
+        break;
+
+    case S_DEMON:
+        switch (mndx) {
+        case PM_BALROG:
+            mongets(mtmp, BULLWHIP);
+            mongets(mtmp, BROADSWORD);
+            break;
+        case PM_ORCUS:
+            mongets(mtmp, WAN_DEATH);
+            break;
+        case PM_HORNED_DEVIL:
+            mongets(mtmp, rn2(4) ? TRIDENT : BULLWHIP);
+            break;
+        case PM_DISPATER:
+            mongets(mtmp, WAN_STRIKING);
+            break;
+        case PM_YEENOGHU:
+            mongets(mtmp, FLAIL);
+            break;
+        }
+        if (!is_demon_f) break;
+        // FALLTHROUGH to default for actual demons
+        /* falls through */
+    default: {
+        const bias = (is_lord_f ? 1 : 0) + (is_prince_f ? 2 : 0) + (is_nasty ? 1 : 0);
+        switch (rnd(14 - 2 * bias)) {
+        case 1:
+            if (is_strong) mongets(mtmp, BATTLE_AXE);
+            else m_initthrow(mtmp, DART, 12);
+            break;
+        case 2:
+            if (is_strong) mongets(mtmp, TWO_HANDED_SWORD);
+            else { mongets(mtmp, CROSSBOW); m_initthrow(mtmp, CROSSBOW_BOLT, 12); }
+            break;
+        case 3:
+            mongets(mtmp, BOW);
+            m_initthrow(mtmp, ARROW, 12);
+            break;
+        case 4:
+            if (is_strong) mongets(mtmp, LONG_SWORD);
+            else m_initthrow(mtmp, DAGGER, 3);
+            break;
+        case 5:
+            if (is_strong) mongets(mtmp, LUCERN_HAMMER);
+            else mongets(mtmp, AKLYS);
+            break;
+        default: break;
+        }
+        break;
+    }
+    }
+
+    // Final offensive item check for all cases
+    if (m_lev > rn2(75))
+        mongets(mtmp, rnd_offensive_item(mtmp));
+}
+
 // C ref: makemon.c m_initinv() — always makes 2 RNG calls at minimum
 function m_initinv(mtmp) {
     const m_lev = mtmp.m_lev ?? 0;
@@ -966,6 +1443,9 @@ async function makemon(mdat, x, y, mmflags) {
         mtmp.female = femaleok ? rn2(2) : 0;
     }
 
+    // m_initweap: equip monsters that have AT_WEAP attack
+    if (AT_WEAP_PM.has(mndx)) m_initweap(mtmp);
+
     // m_initinv (rn2(50) + rn2(100))
     m_initinv(mtmp);
 
@@ -987,6 +1467,14 @@ async function makemon(mdat, x, y, mmflags) {
 async function maketrap(x, y, typ) {
     const trap = { ttyp: typ, tx: x, ty: y, tseen: false, once: false, launch: { x: 0, y: 0 } };
     if (typ === HOLE || typ === TRAPDOOR) rn2(4); // hole_destination(trap.c:450)
+    if (typ === SQKY_BOARD) {
+        // C ref: trap.c choose_trapnote() — pick an unused musical note (0-11)
+        const existingTraps = game.level?.traps || [];
+        const usedNotes = new Set(existingTraps.filter(t => t.ttyp === SQKY_BOARD && t.tnote != null).map(t => t.tnote));
+        const available = [];
+        for (let k = 0; k < 12; k++) if (!usedNotes.has(k)) available.push(k);
+        trap.tnote = available.length > 0 ? available[rn2(available.length)] : rn2(12);
+    }
     if (!game.level) return trap;
     if (!game.level.traps) game.level.traps = [];
     game.level.traps.push(trap);
@@ -2938,6 +3426,6 @@ export function makedog() {
             _petKind: petKind, _pet: true,
         };
         if (!g.level.monsters) g.level.monsters = [];
-        g.level.monsters.push(mtmp);
+        g.level.monsters.unshift(mtmp); // dog.c adds to head of fmon list
     }
 }

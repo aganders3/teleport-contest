@@ -4,6 +4,7 @@
 import { rn2, rnd, rn1 } from "./rng.js";
 import { mksobj, mkobj } from "./mklev.js";
 import { game } from "./gstate.js";
+import { MON_NAMES } from "./mondata.js";
 
 // Object classes (must match mklev.js)
 const WEAPON_CLASS = 2;
@@ -92,14 +93,26 @@ const BUGLE                    = 256;
 const LEATHER_DRUM             = 257;
 const TOUCHSTONE               = 471;
 
+const TRIPE_RATION             = 264;
+const EGG                      = 266;
+const EUCALYPTUS_LEAF          = 276;
 const APPLE                    = 277;
 const ORANGE                   = 278;
+const PEAR                     = 279;
+const MELON                    = 280;
+const BANANA                   = 281;
 const CARROT                   = 282;
 const SPRIG_OF_WOLFSBANE       = 283;
 const CLOVE_OF_GARLIC          = 284;
+const SLIME_MOLD               = 285;
+const CREAM_PIE                = 287;
+const CANDY_BAR                = 288;
 const FORTUNE_COOKIE           = 289;
+const PANCAKE                  = 290;
+const LEMBAS_WAFER             = 291;
 const CRAM_RATION              = 292;
 const FOOD_RATION              = 293;
+const TIN                      = 296;
 
 const POT_HALLUCINATION        = 304;
 const POT_HEALING              = 307;
@@ -364,6 +377,265 @@ function ini_inv_mkobj_filter(oclass, got_sp1, roleName, raceName) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// addinv: letter assignment, stacking, and description generation
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Per-otyp display metadata: name, optional plural, optional typeStr for
+// appearance lookup, noUncursed flag for items that omit BUC prefix.
+const ITEM_NAMES = {
+    // Weapons
+    [ARROW]:     { name: 'arrow' },
+    [YA]:        { name: 'ya', plural: 'ya' },
+    [DART]:      { name: 'dart' },
+    [SPEAR]:     { name: 'spear' },
+    [DAGGER]:    { name: 'dagger' },
+    [SCALPEL]:   { name: 'scalpel' },
+    [AXE]:       { name: 'axe' },
+    [BATTLE_AXE]:{ name: 'battle-axe', plural: 'battle-axes' },
+    [SHORT_SWORD]:{ name: 'short sword' },
+    [LONG_SWORD]: { name: 'long sword' },
+    [TWO_HANDED_SWORD]: { name: 'two-handed sword' },
+    [KATANA]:    { name: 'katana' },
+    [LANCE]:     { name: 'lance' },
+    [MACE]:      { name: 'mace' },
+    [CLUB]:      { name: 'club' },
+    [QUARTERSTAFF]: { name: 'quarterstaff' },
+    [BULLWHIP]:  { name: 'bullwhip' },
+    [BOW]:       { name: 'bow' },
+    [YUMI]:      { name: 'yumi' },
+    [SLING]:     { name: 'sling' },
+    // Armor
+    [FEDORA]:    { name: 'fedora' },
+    [HELMET]:    { name: 'helmet' },
+    [SPLINT_MAIL]: { name: 'splint mail' },
+    [RING_MAIL]: { name: 'ring mail' },
+    [LEATHER_ARMOR]: { name: 'leather armor' },
+    [LEATHER_JACKET]: { name: 'leather jacket' },
+    [HAWAIIAN_SHIRT]: { name: 'Hawaiian shirt' },
+    [ROBE]:      { name: 'robe' },
+    [CLOAK_OF_MAGIC_RESISTANCE]: { name: 'cloak of magic resistance' },
+    [CLOAK_OF_DISPLACEMENT]: { name: 'cloak of displacement' },
+    [SMALL_SHIELD]: { name: 'small shield' },
+    [LEATHER_GLOVES]: { name: 'pair of leather gloves', plural: 'pairs of leather gloves' },
+    // Tools
+    [SKELETON_KEY]: { name: 'skeleton key' },
+    [SACK]:      { name: 'sack' },
+    [OILSKIN_SACK]: { name: 'oilskin sack' },
+    [LOCK_PICK]: { name: 'lock pick' },
+    [CREDIT_CARD]: { name: 'credit card' },
+    [OIL_LAMP]:  { name: 'oil lamp' },
+    [EXPENSIVE_CAMERA]: { name: 'expensive camera', noUncursed: true },
+    [BLINDFOLD]: { name: 'blindfold' },
+    [TOWEL]:     { name: 'towel' },
+    [LEASH]:     { name: 'leash' },
+    [STETHOSCOPE]: { name: 'stethoscope' },
+    [TINNING_KIT]: { name: 'tinning kit' },
+    [TIN_OPENER]: { name: 'tin opener' },
+    [MAGIC_MARKER]: { name: 'magic marker' },
+    [PICK_AXE]:  { name: 'pick-axe', plural: 'pick-axes' },
+    // Food
+    [TRIPE_RATION]: { name: 'tripe ration' },
+    [EGG]:       { name: 'egg' },
+    [EUCALYPTUS_LEAF]: { name: 'eucalyptus leaf', plural: 'eucalyptus leaves' },
+    [APPLE]:     { name: 'apple' },
+    [ORANGE]:    { name: 'orange' },
+    [PEAR]:      { name: 'pear' },
+    [MELON]:     { name: 'melon' },
+    [BANANA]:    { name: 'banana' },
+    [CARROT]:    { name: 'carrot' },
+    [SPRIG_OF_WOLFSBANE]: { name: 'sprig of wolfsbane' },
+    [CLOVE_OF_GARLIC]: { name: 'clove of garlic' },
+    [SLIME_MOLD]: { name: 'slime mold' },
+    [CREAM_PIE]: { name: 'cream pie' },
+    [CANDY_BAR]: { name: 'candy bar' },
+    [FORTUNE_COOKIE]: { name: 'fortune cookie' },
+    [PANCAKE]:   { name: 'pancake' },
+    [LEMBAS_WAFER]: { name: 'lembas wafer' },
+    [CRAM_RATION]: { name: 'cram ration' },
+    [FOOD_RATION]: { name: 'food ration' },
+    [TIN]:       { name: 'tin' },
+    // Potions
+    [POT_HEALING]: { name: 'potion of healing', typeStr: 'potion of healing' },
+    [POT_EXTRA_HEALING]: { name: 'potion of extra healing', typeStr: 'potion of extra healing' },
+    [POT_SICKNESS]: { name: 'potion of sickness', typeStr: 'potion of sickness' },
+    [POT_WATER]: { name: 'potion of water', typeStr: 'potion of water' },
+    // Scrolls
+    [SCR_MAGIC_MAPPING]: { name: 'scroll of magic mapping', typeStr: 'scroll of magic mapping' },
+    // Spellbooks
+    [SPE_HEALING]: { name: 'spellbook of healing' },
+    [SPE_EXTRA_HEALING]: { name: 'spellbook of extra healing' },
+    [SPE_STONE_TO_FLESH]: { name: 'spellbook of stone to flesh' },
+    [SPE_FORCE_BOLT]: { name: 'spellbook of force bolt' },
+    [SPE_CONFUSE_MONSTER]: { name: 'spellbook of confuse monster' },
+    [SPE_PROTECTION]: { name: 'spellbook of protection' },
+    // Wands
+    [WAN_SLEEP]: { name: 'wand of sleep' },
+    // Gold
+    [GOLD_PIECE]: { name: 'gold piece' },
+    // Gems/stones
+    [LUCKSTONE]:  { name: 'luckstone' },
+    [LOADSTONE]:  { name: 'loadstone' },
+    [TOUCHSTONE]: { name: 'touchstone' },
+    [FLINT]:      { name: 'flint stone', plural: 'flint stones' },
+    [ROCK]:       { name: 'rock' },
+};
+
+function oclass_to_category(oclass) {
+    switch (oclass) {
+        case WEAPON_CLASS: return 'Weapons';
+        case ARMOR_CLASS:  return 'Armor';
+        case RING_CLASS:   return 'Rings';
+        case AMULET_CLASS: return 'Amulets';
+        case TOOL_CLASS:   return 'Tools';
+        case FOOD_CLASS:   return 'Comestibles';
+        case POTION_CLASS: return 'Potions';
+        case SCROLL_CLASS: return 'Scrolls';
+        case SPBOOK_CLASS: return 'Spellbooks';
+        case WAND_CLASS:   return 'Wands';
+        case COIN_CLASS:   return 'Coins';
+        case GEM_CLASS:    return 'Gems/Stones';
+        default:           return 'Miscellaneous';
+    }
+}
+
+function next_inv_letter() {
+    const invent = game.u.invent || [];
+    const used = new Set(invent.map(i => i.letter));
+    for (let i = 0; i < 26; i++) {
+        const c = String.fromCharCode(97 + i); // 'a'-'z'
+        if (!used.has(c)) return c;
+    }
+    for (let i = 0; i < 26; i++) {
+        const c = String.fromCharCode(65 + i); // 'A'-'Z'
+        if (!used.has(c)) return c;
+    }
+    return '?';
+}
+
+// Pluralize a simple word, or for "X of Y" compounds pluralize only X.
+function pluralize(name, explicitPlural) {
+    if (explicitPlural) return explicitPlural;
+    const ofIdx = name.indexOf(' of ');
+    if (ofIdx >= 0) {
+        const first = name.slice(0, ofIdx);
+        const rest  = name.slice(ofIdx);
+        const fplu  = first.endsWith('s') || first.endsWith('x') || first.endsWith('z')
+            ? first + 'es' : first + 's';
+        return fplu + rest;
+    }
+    if (name.endsWith('s') || name.endsWith('x') || name.endsWith('z')) return name + 'es';
+    return name + 's';
+}
+
+// Build the human-readable description for an inventory slot.
+// tinPm: monster index for flesh tins; tinSpinach: true for spinach tins.
+function build_item_desc(otyp, oclass, quan, blessed, cursed, spe, tinPm, tinSpinach) {
+    if (oclass === COIN_CLASS) return `${quan} gold pieces`;
+
+    const meta = ITEM_NAMES[otyp];
+    let baseName = meta ? meta.name : `item #${otyp}`;
+    const noUncursed = meta?.noUncursed || false;
+
+    // TIN: include contents in name
+    if (oclass === FOOD_CLASS && otyp === TIN) {
+        let contents = 'unknown creature';
+        if (tinSpinach) contents = 'spinach';
+        else if (tinPm !== undefined && tinPm >= 0) contents = MON_NAMES[tinPm] || 'unknown creature';
+        baseName = `tin of ${contents}`;
+    }
+
+    // BUC prefix — for weapons (implicit_uncursed default): omit "uncursed"
+    let buc = '';
+    if (!noUncursed) {
+        if (blessed) buc = 'blessed ';
+        else if (cursed) buc = 'cursed ';
+        else if (oclass !== WEAPON_CLASS) buc = 'uncursed ';
+        // WEAPON_CLASS: implicit_uncursed is on by default — enhancement implies uncursed
+    }
+
+    // Enhancement prefix (+N/-N) for weapons and armor
+    let speStr = '';
+    if (oclass === WEAPON_CLASS || oclass === ARMOR_CLASS) {
+        speStr = `${spe >= 0 ? '+' : ''}${spe} `;
+    }
+
+    // Charges suffix for tools
+    let suffix = '';
+    if (oclass === TOOL_CLASS && otyp === EXPENSIVE_CAMERA) {
+        suffix = ` (0:${spe})`;
+        speStr = '';
+    } else if (oclass === TOOL_CLASS && (otyp === TINNING_KIT || otyp === MAGIC_MARKER)) {
+        suffix = ` (${spe}:0)`;
+        speStr = '';
+    } else if (oclass === WAND_CLASS) {
+        suffix = ` (${spe}:0)`;
+        speStr = '';
+    }
+
+    if (quan === 1) {
+        const first = buc || baseName;
+        const article = 'aeiouAEIOU'.includes(first[0]) ? 'an' : 'a';
+        return `${article} ${buc}${speStr}${baseName}${suffix}`;
+    } else {
+        const pl = pluralize(baseName, meta?.plural);
+        return `${quan} ${buc}${speStr}${pl}${suffix}`;
+    }
+}
+
+// C ref: invent.c addinv() — add object to player inventory.
+// Stacks items of same otyp+bless+spe into one slot; assigns new letter otherwise.
+// Returns the inventory item slot that was created or updated.
+export function addinv(obj) {
+    const g = game;
+    if (!g.u) g.u = {};
+    if (!g.u.invent) g.u.invent = [];
+
+    const oclass = obj.oclass;
+    const otyp   = obj.otyp;
+    const quan   = obj.quan || 1;
+    const blessed = !!obj.blessed;
+    const cursed  = !!obj.cursed;
+    const spe     = obj.spe || 0;
+    const tinPm     = obj._tin_pm;
+    const tinSpinach = obj._tin_spinach;
+
+    if (oclass === COIN_CLASS) {
+        const existing = g.u.invent.find(i => i.letter === '$');
+        if (existing) {
+            existing._quan = (existing._quan || 0) + quan;
+            existing.desc = build_item_desc(otyp, oclass, existing._quan, false, false, 0);
+            return existing;
+        } else {
+            const slot = { letter: '$', category: 'Coins',
+                desc: build_item_desc(otyp, oclass, quan, false, false, 0),
+                _otyp: otyp, _quan: quan, _blessed: false, _cursed: false, _spe: 0 };
+            g.u.invent.push(slot);
+            return slot;
+        }
+    }
+
+    // Try to merge with existing slot of same otyp+bless+cursed+spe
+    const existing = g.u.invent.find(i =>
+        i._otyp === otyp && i._blessed === blessed && i._cursed === cursed && i._spe === spe
+    );
+    if (existing) {
+        existing._quan += quan;
+        existing.desc = build_item_desc(otyp, oclass, existing._quan, blessed, cursed, spe, tinPm, tinSpinach);
+        return existing;
+    }
+
+    // New inventory slot
+    const slot = {
+        letter: next_inv_letter(),
+        category: oclass_to_category(oclass),
+        desc: build_item_desc(otyp, oclass, quan, blessed, cursed, spe, tinPm, tinSpinach),
+        _otyp: otyp, _quan: quan, _blessed: blessed, _cursed: cursed, _spe: spe,
+    };
+    g.u.invent.push(slot);
+    return slot;
+}
+
 // C ref: u_init.c ini_inv_adjust_obj() — post-creation adjustments
 // Returns true (stop) for WEAPON_CLASS and TOOL_CLASS items.
 function ini_inv_adjust_obj(trop, otmp) {
@@ -371,6 +643,7 @@ function ini_inv_adjust_obj(trop, otmp) {
     if (trop.cls === COIN_CLASS) {
         otmp.quan = game.u?.umoney0 ?? 0;
     } else {
+        otmp.cursed = false; // C: ini_inv_adjust_obj always clears cursed flag
         if (otmp.oclass === WEAPON_CLASS || otmp.oclass === TOOL_CLASS) {
             otmp.quan = trquan(trop);
             stop = true;
@@ -384,10 +657,50 @@ function ini_inv_adjust_obj(trop, otmp) {
             }
         }
         if (trop.bless !== UNDEF_BLESS) {
-            otmp.blessed = trop.bless;
+            otmp.blessed = !!trop.bless;
         }
     }
     return stop;
+}
+
+// Ammo/missile otyp range (ARROW=18 through shuriken area ~26)
+// These are the weapon types that go to uquiver in ini_inv_use_obj.
+const AMMO_MISSILE_MIN = 18, AMMO_MISSILE_MAX = 26;
+
+// C ref: u_init.c ini_inv_use_obj() — assign worn/wielded/quivered state
+// and discover identified items (scrolls, potions).
+function ini_inv_use_obj_js(obj, slot) {
+    const g = game;
+    const oclass = obj.oclass;
+    const otyp = obj.otyp;
+
+    if (oclass === WEAPON_CLASS || otyp === TIN_OPENER) {
+        // Ammo/missile → uquiver; others → uwep (ignored for display)
+        const isAmmoMissile = otyp >= AMMO_MISSILE_MIN && otyp <= AMMO_MISSILE_MAX;
+        if (isAmmoMissile && !g.u.uquiver) {
+            g.u.uquiver = slot.letter;
+        }
+    } else if (oclass === ARMOR_CLASS) {
+        slot._worn = true;
+    } else if (oclass === SCROLL_CLASS || oclass === POTION_CLASS) {
+        // C: discover_object if has description (appearance) and known
+        const meta = ITEM_NAMES[otyp];
+        const typeStr = meta?.typeStr || meta?.name;
+        if (typeStr && game.obj_appearances) {
+            const appearance = game.obj_appearances[typeStr];
+            if (appearance) {
+                if (!g.u.discoveries) g.u.discoveries = [];
+                const catName = oclass_to_category(oclass);
+                let group = g.u.discoveries.find(d => d.category === catName);
+                if (!group) {
+                    group = { category: catName, items: [] };
+                    g.u.discoveries.push(group);
+                }
+                const entry = `${typeStr} (${appearance})`;
+                if (!group.items.includes(entry)) group.items.push(entry);
+            }
+        }
+    }
 }
 
 // C ref: u_init.c ini_inv() — main inventory initialization loop
@@ -409,7 +722,8 @@ function ini_inv(trobj_arr, roleName, raceName) {
         if (ini_inv_adjust_obj(trop, obj)) {
             quan = 1;
         }
-        // addinv(obj) — track spellbook level for got_sp1
+        const slot = addinv(obj);
+        ini_inv_use_obj_js(obj, slot);
         if (obj.oclass === SPBOOK_CLASS && (SPE_LEVEL[obj.otyp] ?? 0) === 1) {
             got_sp1 = true;
         }

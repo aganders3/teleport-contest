@@ -55,7 +55,9 @@ function terrain_glyph(loc, x, y) {
                                : { ch: '.', color: NO_COLOR, dec: false };
     case CORR:      return { ch: '#', color: NO_COLOR, dec: false };
     case DOOR:
-        if (loc.doormask & D_ISOPEN) return { ch: '|', color: CLR_BROWN, dec: false };
+        if (loc.doormask & D_ISOPEN) return dec
+            ? { ch: 'a', color: CLR_BROWN, dec: true }   // S_vodoor/S_hodoor: alt-charset 'a'
+            : { ch: '|', color: CLR_BROWN, dec: false };
         if (loc.doormask & (D_CLOSED | D_LOCKED)) return { ch: '+', color: CLR_BROWN, dec: false };
         return dec ? { ch: '~', color: NO_COLOR, dec: true }
                    : { ch: '.', color: NO_COLOR, dec: false };
@@ -108,7 +110,7 @@ const _ROCK_CLASS = 14, _BALL_CLASS = 15, _CHAIN_CLASS = 16;
 
 function obj_glyph(obj) {
     switch (obj.oclass) {
-    case _WEAPON_CLASS: return { ch: '(', color: CLR_WHITE };
+    case _WEAPON_CLASS: return { ch: ')', color: CLR_CYAN };
     case _ARMOR_CLASS:  return { ch: '[', color: CLR_GRAY };
     case _TOOL_CLASS:   return { ch: '(', color: CLR_BROWN };
     case _FOOD_CLASS:   return { ch: '%', color: CLR_BROWN };
@@ -135,6 +137,7 @@ export function show_glyph_cell(x, y, ch, color = NO_COLOR, decgfx = false, attr
     loc.disp_color = color;
     loc.disp_decgfx = !!decgfx;
     loc.disp_attr = attr | 0;
+    loc.disp_dim = false;
     loc.gnew = 1;
 }
 
@@ -191,6 +194,8 @@ export function newsym(x, y) {
     } else if (loc.remembered_glyph) {
         show_glyph_cell(x, y, loc.remembered_glyph.ch,
             loc.remembered_glyph.color, loc.remembered_glyph.decgfx);
+        // Dim only floor/corridor tiles — walls are always shown at full intensity
+        loc.disp_dim = (loc.typ === ROOM || loc.typ === CORR);
     }
 }
 
@@ -243,6 +248,7 @@ function render_map_row(y, maxX = COLNO - 1) {
         }
 
         let wantAnsi = ANSI_COLOR[color] ?? ANSI_DEFAULT;
+        if (loc?.disp_dim && wantAnsi === ANSI_DEFAULT) wantAnsi = 90;
         if (wantAnsi !== activeColor) {
             output += `\x1b[${wantAnsi}m`;
             activeColor = wantAnsi;
