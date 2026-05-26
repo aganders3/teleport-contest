@@ -280,9 +280,16 @@ function _statusLine1() {
     // C internal order: A_STR=0 A_INT=1 A_WIS=2 A_DEX=3 A_CON=4 A_CHA=5
     // Display order: St Dx Co In Wi Ch = STR DEX CON INT WIS CHA
     const a = u.acurr?.a;
-    const strVal = a ? a[0] : '?';
+    // C ref: botl.c get_strength_str() — exceptional strength encoding:
+    // 1-18: normal; 19-117: "18/01"-"18/99"; 118: "18/**"; >118: st-100
+    function fmtStr(st) {
+        if (st > 118) return `${st - 100}`;
+        if (st === 118) return '18/**';
+        if (st > 18) return `18/${String(st - 18).padStart(2, '0')}`;
+        return `${st}`;
+    }
     const stats = a
-        ? `St:${a[0]} Dx:${a[3]} Co:${a[4]} In:${a[1]} Wi:${a[2]} Ch:${a[5]}`
+        ? `St:${fmtStr(a[0])} Dx:${a[3]} Co:${a[4]} In:${a[1]} Wi:${a[2]} Ch:${a[5]}`
         : 'St:? Dx:? Co:? In:? Wi:? Ch:?';
     const align = u.ualign?.type === 0 ? 'Neutral' : u.ualign?.type > 0 ? 'Lawful' : 'Chaotic';
     // C uses cursor-forward for gap between title and stats
@@ -469,14 +476,8 @@ export function buildLegacyPagerScreen(pagerLines, textCol) {
         const targetCol = textCol + nsp;
 
         if (!content) {
-            // Empty pager line: show full map row (no text to overlay).
-            let hasMap = false;
-            if (game.level) {
-                for (let x = 1; x < COLNO; x++) {
-                    if (game.level.at(x, y)?.disp_ch > ' ') { hasMap = true; break; }
-                }
-            }
-            parts.push(hasMap ? render_map_row(y) : '');
+            // C's NHW_TEXT window replaces all map rows — empty pager line → blank.
+            parts.push('');
         } else {
             // C com_pager does clrtoeol from textCol-1, so only map cells at
             // x ≤ textCol-1 (terminal col ≤ textCol-2) survive.
@@ -500,9 +501,9 @@ export function buildLegacyPagerScreen(pagerLines, textCol) {
         }
     }
 
-    // Rows 18-21: map only
+    // Rows 18-21: blank (C's NHW_TEXT window covers full map area, no map bleed-through)
     for (let row = 18; row <= 21; row++) {
-        parts.push(render_map_row(row - 1));
+        parts.push('');
     }
 
     // Rows 22-23: status

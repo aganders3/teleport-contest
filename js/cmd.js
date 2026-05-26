@@ -529,7 +529,7 @@ export async function rhack(key) {
 
     if (isMovementKey(ch)) {
         await domove(DIR_DX[ch], DIR_DY[ch]);
-        game.context.move = 1;
+        // context.move is set by domove() (0 if blocked, 1 if moved)
     } else if (ch === 'i') {
         await doInventory();
     } else if (ch === 'e') {
@@ -596,6 +596,8 @@ async function domove(dx, dy) {
     newsym(oldx, oldy);
     vision_recalc(1);
     newsym(newx, newy);
+
+    game.context.move = 1;
 
     // movePets() is called after general_step() in allmain.js so that
     // dog_goal_rng sees the dog's pre-move position (matching C's ordering:
