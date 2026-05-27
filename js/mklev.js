@@ -5,7 +5,7 @@
 // room placement, corridors, doors, stairs, niches, and fill.
 // Uses the real game PRNG (not a separate layout PRNG) for bit-exact parity.
 
-import { RUMORS_B64, ENGRAVE_B64 } from './dat_inline.js';
+import { RUMORS_B64, ENGRAVE_B64, EPITAPH_B64 } from './dat_inline.js';
 import { game } from './gstate.js';
 import { GameMap } from './game.js';
 import { rn2, rnd, rn1, d, rnz, rne } from './rng.js';
@@ -712,7 +712,14 @@ function mksobj_from_class(oclass, typProb, init_forced, artif) {
         otmp.otyp = food_prob_to_otyp(typProb);
         otmp._food_type = food_otyp_to_type(otmp.otyp);
     } else if (oclass === GEM_CLASS) {
-        otmp._gem_type = 'GENERIC'; // simplified: treat all gems as generic
+        // C ref: mkobj.c mksobj_init GEM_CLASS — LUCKSTONE and LOADSTONE skip rn2(6).
+        // Cumulative GEM_CLASS probs from objects.h (total=1000):
+        //   real gems 1-171, glass 172-862, LUCKSTONE 863-872, LOADSTONE 873-882,
+        //   TOUCHSTONE 883-890, FLINT 891-900, ROCK 901-1000.
+        if (typProb >= 863 && typProb <= 872) otmp._gem_type = 'LUCKSTONE';
+        else if (typProb >= 873 && typProb <= 882) otmp._gem_type = 'LOADSTONE';
+        else if (typProb >= 901) otmp._gem_type = 'ROCK';
+        else otmp._gem_type = 'GENERIC';
     } else if (oclass === WEAPON_CLASS) {
         // Multigen weapons (projectiles): typProb ≤ 287 covers all mg=1 weapons
         // (arrows 1-177, dart 178-237, shuriken 238-272, boomerang 273-287)
@@ -1488,16 +1495,23 @@ function make_engr_at(x, y, text, pristine, epoch, engr_type) { /* stub */ }
 function wipe_engr_at(x, y, cnt, perm) { /* stub */ }
 function make_grave(x, y, text) {
     const loc = game.level?.at(x, y);
-    if (loc) loc.typ = GRAVE;
+    if (!loc) return;
+    if (loc.typ !== ROOM && loc.typ !== GRAVE) return;
+    loc.typ = GRAVE;
+    // C ref: engrave.c make_grave() — when no text given, pick random epitaph
+    // This consumes rn2(epitaph_filesize) via get_rnd_text(EPITAPHFILE).
+    if (!text) text = _get_rnd_text_epitaph();
+    loc._grave_text = text;
 }
 
 // ─── Engraving / rumor file support ─────────────────────────────────────────
 // C ref: engrave.c random_engraving(), rumors.c getrumor() + get_rnd_line(),
 //        hacklib.c xcrypt(), engrave.c wipeout_text()
 
-let _rumorsData = null, _engraveData = null;
+let _rumorsData = null, _engraveData = null, _epitaphData = null;
 let _trueRumorStart, _trueRumorEnd, _falseRumorStart, _falseRumorEnd;
 let _engraveFileStart, _engraveFileEnd;
+let _epitaphFileStart, _epitaphFileEnd;
 
 function _b64ToUint8Array(b64) {
     const bin = atob(b64);
@@ -1528,6 +1542,12 @@ function _ensureRumorFiles() {
     const e1end = _engraveData.indexOf(0x0a);
     _engraveFileStart = e1end + 1;
     _engraveFileEnd   = _engraveData.length;
+
+    // Epitaph file
+    _epitaphData = _b64ToUint8Array(EPITAPH_B64);
+    const ep1end = _epitaphData.indexOf(0x0a);
+    _epitaphFileStart = ep1end + 1;
+    _epitaphFileEnd   = _epitaphData.length;
 }
 
 function _xcrypt(str) {
@@ -1577,6 +1597,12 @@ function _getrumor() {
 function _get_rnd_text_engrave() {
     _ensureRumorFiles();
     return _get_rnd_line(_engraveData, _engraveFileStart, _engraveFileEnd, 60);
+}
+
+// C ref: rumors.c get_rnd_text(EPITAPHFILE)
+function _get_rnd_text_epitaph() {
+    _ensureRumorFiles();
+    return _get_rnd_line(_epitaphData, _epitaphFileStart, _epitaphFileEnd, 60);
 }
 
 // rubouts table from engrave.c
@@ -3498,6 +3524,14 @@ export function makedog() {
         if (first !== 0) {
             rn2(2 + Math.abs(petMaligntyp));
         }
+    }
+
+    // C ref: dog.c makedog() / steed.c put_saddle_on_mon() — Knights start with a saddled pony.
+    // put_saddle_on_mon(NULL, mtmp) creates a saddle via mksobj(SADDLE, TRUE, FALSE),
+    // which calls next_ident() for the saddle's o_id. SADDLE is TOOL_CLASS with no
+    // mksobj_init RNG, so only next_ident() is consumed.
+    if (petKind === 'pony') {
+        next_ident(); // saddle o_id
     }
 
     // Determine pet name (C ref: dog.c makedog())
